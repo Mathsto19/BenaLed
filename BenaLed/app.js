@@ -1,0 +1,952 @@
+const GRID_SIZE = 32;
+const OFF_COLOR = "#000000";
+
+const canvas = document.getElementById("ledCanvas");
+const ctx = canvas.getContext("2d");
+
+const clearBtn = document.getElementById("clearBtn");
+const presetBtn = document.getElementById("presetBtn");
+const toggleColorsBtn = document.getElementById("toggleColorsBtn");
+const paintToolbar = document.getElementById("paintToolbar");
+const card = document.querySelector(".card");
+
+const presetModal = document.getElementById("presetModal");
+const colorPicker = document.getElementById("colorPicker");
+const currentColorPreview = document.getElementById("currentColorPreview");
+const currentColorLabel = document.getElementById("currentColorLabel");
+
+const modeButtons = document.querySelectorAll("[data-mode]");
+const swatchButtons = document.querySelectorAll(".inline-palette .color-swatch");
+const presetButtons = document.querySelectorAll(".preset-item");
+
+let selectedColor = "#00eeff";
+let paintMode = "paint";
+let isDrawing = false;
+let lastPaintedCell = null;
+let rainbowPixelCounter = 0;
+
+let frame = createEmptyFrame();
+
+function createEmptyFrame() {
+  return Array.from({ length: GRID_SIZE }, () =>
+    Array.from({ length: GRID_SIZE }, () => OFF_COLOR)
+  );
+}
+
+function cloneFrame(source) {
+  return source.map((row) => [...row]);
+}
+
+
+function frameToRgbMatrix(sourceFrame = frame) {
+  return sourceFrame.map((row) =>
+    row.map((color) => color.replace("#", "").toLowerCase())
+  );
+}
+
+function frameToRgbMatrixString(sourceFrame = frame, variableName = "liveFrame") {
+  const rows = frameToRgbMatrix(sourceFrame)
+    .map((row) => `  [${row.map((color) => `"${color}"`).join(", ")}]`)
+    .join(",\n");
+
+  return `const ${variableName} = [\n${rows}\n];`;
+}
+
+window.getCurrentLedMatrix = () => frameToRgbMatrix(frame);
+window.getCurrentLedMatrixString = () => frameToRgbMatrixString(frame);
+window.copyLedMatrixToClipboard = async () => {
+  const matrixString = frameToRgbMatrixString(frame);
+  await navigator.clipboard.writeText(matrixString);
+  return matrixString;
+};
+window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (h < 60) {
+    r = c; g = x; b = 0;
+  } else if (h < 120) {
+    r = x; g = c; b = 0;
+  } else if (h < 180) {
+    r = 0; g = c; b = x;
+  } else if (h < 240) {
+    r = 0; g = x; b = c;
+  } else if (h < 300) {
+    r = x; g = 0; b = c;
+  } else {
+    r = c; g = 0; b = x;
+  }
+
+  const toHex = (value) =>
+    Math.round((value + m) * 255)
+      .toString(16)
+      .padStart(2, "0");
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function updateToolbarUi() {
+  modeButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.mode === paintMode);
+  });
+
+  swatchButtons.forEach((button) => {
+    const isSelected =
+      paintMode === "paint" &&
+      button.dataset.color.toLowerCase() === selectedColor.toLowerCase();
+
+    button.classList.toggle("is-selected", isSelected);
+  });
+
+  if (paintMode === "eraser") {
+    currentColorLabel.textContent = "Borracha";
+    currentColorPreview.style.background =
+      "repeating-linear-gradient(135deg, #2a3442 0 8px, #0d1523 8px 16px)";
+    return;
+  }
+
+  if (paintMode === "rainbow") {
+    currentColorLabel.textContent = "Rainbow";
+    currentColorPreview.style.background =
+      "conic-gradient(#ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #0a84ff, #5e5ce6, #bf5af2, #ff2d55, #ff3b30)";
+    return;
+  }
+
+  currentColorLabel.textContent = "Cor atual";
+  currentColorPreview.style.background = selectedColor;
+}
+
+function setPaintMode(mode) {
+  paintMode = mode;
+
+  if (paintMode === "rainbow") {
+    rainbowPixelCounter = 0;
+  }
+
+  updateToolbarUi();
+}
+
+function setSelectedColor(color) {
+  selectedColor = color.toLowerCase();
+  colorPicker.value = selectedColor;
+  paintMode = "paint";
+  updateToolbarUi();
+}
+
+function getRainbowColor() {
+  const hue = (Math.floor(rainbowPixelCounter / 3) * 20) % 360;
+  rainbowPixelCounter += 1;
+  return hslToHex(hue, 100, 60);
+}
+
+function getCurrentPaintColor() {
+  if (paintMode === "eraser") return OFF_COLOR;
+  if (paintMode === "rainbow") return getRainbowColor();
+  return selectedColor;
+}
+
+function openModal(modal) {
+  modal.classList.remove("hidden");
+}
+
+function closeModal(modal) {
+  modal.classList.add("hidden");
+}
+
+function roundRectPath(context, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.lineTo(x + width - r, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + r);
+  context.lineTo(x + width, y + height - r);
+  context.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  context.lineTo(x + r, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - r);
+  context.lineTo(x, y + r);
+  context.quadraticCurveTo(x, y, x + r, y);
+  context.closePath();
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3
+    ? normalized.split("").map((c) => c + c).join("")
+    : normalized;
+
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function isOffCell(color) {
+  return color.toLowerCase() === OFF_COLOR;
+}
+
+function drawLedCell(x, y, color, cellSize) {
+  const gap = Math.max(1.6, cellSize * 0.11);
+  const ledSize = cellSize - gap;
+  const drawX = x * cellSize + gap / 2;
+  const drawY = y * cellSize + gap / 2;
+  const radius = Math.max(2, ledSize * 0.24);
+
+  if (isOffCell(color)) {
+    ctx.fillStyle = "#04070c";
+    roundRectPath(ctx, drawX, drawY, ledSize, ledSize, radius);
+    ctx.fill();
+
+    ctx.fillStyle = "#0a1018";
+    roundRectPath(ctx, drawX + 1.4, drawY + 1.4, ledSize - 2.8, ledSize - 2.8, Math.max(2, radius - 1));
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.035)";
+    roundRectPath(ctx, drawX + 2.2, drawY + 2.2, ledSize - 4.4, Math.max(2, ledSize * 0.24), Math.max(2, radius - 2));
+    ctx.fill();
+
+    return;
+  }
+
+  ctx.save();
+  ctx.shadowColor = hexToRgba(color, 0.75);
+  ctx.shadowBlur = cellSize * 0.5;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.fillStyle = color;
+  roundRectPath(ctx, drawX, drawY, ledSize, ledSize, radius);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  roundRectPath(
+    ctx,
+    drawX + 2.2,
+    drawY + 2.2,
+    ledSize - 4.4,
+    Math.max(3, ledSize * 0.26),
+    Math.max(2, radius - 2)
+  );
+  ctx.fill();
+
+  ctx.strokeStyle = hexToRgba("#ffffff", 0.08);
+  ctx.lineWidth = 1;
+  roundRectPath(ctx, drawX + 0.5, drawY + 0.5, ledSize - 1, ledSize - 1, radius);
+  ctx.stroke();
+}
+
+function render() {
+  const cellSize = canvas.width / GRID_SIZE;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#05070b";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      drawLedCell(x, y, frame[y][x], cellSize);
+    }
+  }
+}
+
+function getCellFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+
+  const canvasX = (event.clientX - rect.left) * scaleX;
+  const canvasY = (event.clientY - rect.top) * scaleY;
+
+  const cellSize = canvas.width / GRID_SIZE;
+  const x = Math.floor(canvasX / cellSize);
+  const y = Math.floor(canvasY / cellSize);
+
+  if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) {
+    return null;
+  }
+
+  return { x, y };
+}
+
+function paintCell(x, y, color) {
+  frame[y][x] = color;
+  scheduleConsoleExport();
+}
+
+function paintUsingActiveMode(x, y) {
+  paintCell(x, y, getCurrentPaintColor());
+}
+
+function drawInterpolatedLine(x0, y0, x1, y1) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const steps = Math.max(Math.abs(dx), Math.abs(dy));
+
+  if (steps === 0) {
+    paintUsingActiveMode(x0, y0);
+    return;
+  }
+
+  for (let i = 0; i <= steps; i++) {
+    const x = Math.round(x0 + (dx * i) / steps);
+    const y = Math.round(y0 + (dy * i) / steps);
+    paintUsingActiveMode(x, y);
+  }
+}
+
+function drawFromEvent(event) {
+  const cell = getCellFromEvent(event);
+  if (!cell) return;
+
+  if (lastPaintedCell) {
+    drawInterpolatedLine(
+      lastPaintedCell.x,
+      lastPaintedCell.y,
+      cell.x,
+      cell.y
+    );
+  } else {
+    paintUsingActiveMode(cell.x, cell.y);
+  }
+
+  lastPaintedCell = cell;
+  scheduleRender();
+}
+
+function processPointerEvent(event) {
+  const events = typeof event.getCoalescedEvents === "function"
+    ? event.getCoalescedEvents()
+    : [event];
+
+  for (const pointerEvent of events) {
+    drawFromEvent(pointerEvent);
+  }
+}
+
+function clearFrame() {
+  frame = createEmptyFrame();
+  render();
+  scheduleConsoleExport();
+}
+
+function setPixelSafe(targetFrame, x, y, color) {
+  if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
+  targetFrame[y][x] = color;
+}
+
+function getPresetFrameByName(name) {
+  switch (name) {
+    case "alien":
+      return createAlienPreset();
+    case "parque":
+      return createParquePreset();
+    case "quack":
+      return createQuackPreset();
+    case "mushroom":
+      return createMushroomPreset();
+    case "utfpr":
+      return createUtfprPreset();
+    case "noctua":
+      return createNoctuaPreset();
+    case "robotnik":
+      return createRobotnikPreset();
+    case "fogo":
+      return createFogoPreset();
+    default:
+      return createEmptyFrame();
+  }
+}
+
+function getDominantColorFromFrame(sourceFrame) {
+  const colorCount = new Map();
+
+  for (const row of sourceFrame) {
+    for (const color of row) {
+      const normalized = color.toLowerCase();
+
+      if (normalized === OFF_COLOR) continue;
+
+      colorCount.set(normalized, (colorCount.get(normalized) || 0) + 1);
+    }
+  }
+
+  if (colorCount.size === 0) {
+    return "#00e5ff";
+  }
+
+  let dominantColor = "#00e5ff";
+  let maxCount = -1;
+
+  for (const [color, count] of colorCount.entries()) {
+    if (count > maxCount) {
+      dominantColor = color;
+      maxCount = count;
+    }
+  }
+
+  return dominantColor;
+}
+
+function applyPresetHoverColors() {
+  presetButtons.forEach((button) => {
+    const presetName = button.dataset.preset;
+    const presetFrame = getPresetFrameByName(presetName);
+    const dominantColor = getDominantColorFromFrame(presetFrame);
+
+    button.style.setProperty("--preset-glow", dominantColor);
+    button.style.setProperty("--preset-glow-soft", hexToRgba(dominantColor, 0.18));
+    button.style.setProperty("--preset-glow-border", hexToRgba(dominantColor, 0.38));
+    button.style.setProperty("--preset-glow-shadow", hexToRgba(dominantColor, 0.22));
+  });
+}
+
+function applyPreset(name) {
+  const newFrame = getPresetFrameByName(name);
+
+  frame = cloneFrame(newFrame);
+  render();
+  scheduleConsoleExport();
+  closeModal(presetModal);
+}
+
+function drawSpriteCentered(targetFrame, spriteMap, colors) {
+  const spriteHeight = spriteMap.length;
+  const spriteWidth = spriteMap[0].length;
+  const scale = Math.floor(GRID_SIZE / Math.max(spriteWidth, spriteHeight));
+  const scaledWidth = spriteWidth * scale;
+  const scaledHeight = spriteHeight * scale;
+
+  const offsetX = Math.floor((GRID_SIZE - scaledWidth) / 2);
+  const offsetY = Math.floor((GRID_SIZE - scaledHeight) / 2);
+
+  for (let y = 0; y < spriteHeight; y++) {
+    for (let x = 0; x < spriteWidth; x++) {
+      const pixelValue = spriteMap[y][x];
+      if (pixelValue > 0 && colors[pixelValue - 1]) {
+        for (let sy = 0; sy < scale; sy++) {
+          for (let sx = 0; sx < scale; sx++) {
+            setPixelSafe(targetFrame, offsetX + x * scale + sx, offsetY + y * scale + sy, colors[pixelValue - 1]);
+          }
+        }
+      }
+    }
+  }
+}
+
+function createAlienPreset() {
+  const targetFrame = createEmptyFrame();
+  const alien = [
+    [0,0,1,0,0,0,0,0,1,0,0],
+    [0,0,0,1,0,0,0,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,1,0,1,1,1,0,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,1,1,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,1],
+    [0,0,0,1,1,0,1,1,0,0,0]
+  ];
+  drawSpriteCentered(targetFrame, alien, ["#34c759"]);
+  return targetFrame;
+}
+
+function createParquePreset() {
+  const targetFrame = createEmptyFrame();
+  const parque = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,0,2,0,0,0,2,2,2,2,2,2,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,0,0,2,2,0,0,2,0,2,2,2,2,2,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,2,2,2,2,0,0,0,0,2,0,2,0,0,0,2,2,2,2,2,0,0,0],
+    [0,0,0,0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,2,2,2,0,0,0,0,2,2,2,2,2,0,0],
+    [0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,0,0],
+    [0,0,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,2,2,2,0,0,0,2,1,1,1,1,1,0,0],
+    [0,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,2,2,0,2,0,0,0,0,0,0,1,1,1,0,0],
+    [2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,2,0,0,2,0,0,0,0,0,0,1,1,1,1,0],
+    [0,2,2,2,2,0,0,0,2,2,2,2,0,0,0,0,2,0,0,0,2,2,0,0,0,0,0,1,1,1,1,0],
+    [0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,2,0,0,0,0,0,1,1,1,1,0],
+    [0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,0,2,2,0,0,0,0,0,1,1,1,0],
+    [0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,0,0,0,2,2,2,2,0,0,0,2,1,2,0],
+    [0,0,0,2,2,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,0,2,2,2,2,2,3,3,3,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,0,0,0,0,0,0,2,3,3,3,3,3],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0,0,3,3,3,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0,0,3,3,3,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0,3,3,3,3,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0,3,3,3,3,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0,3,3,3,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1,2,0,0,0,0,0,0,0,0,3,3,3,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,0,0,0,0,0,0,0,3,3,3,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  ];
+
+  drawSpriteCentered(targetFrame, parque, [
+    "#2bd3e9", // 1 brilho ciano
+    "#178ea3", // 2 corpo principal
+    "#127586"  // 3 sombra azul
+  ]);
+
+  return targetFrame;
+}
+
+function createQuackPreset() {
+  const targetFrame = createEmptyFrame();
+
+  // 0 = fundo/apagado
+  // 1 = contorno preto
+  // 2 = amarelo principal
+  // 3 = amarelo/sombra
+  // 4 = laranja do bico
+  // 5 = branco do olho
+  const quack = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,3,3,3,3,3,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,2,2,2,2,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,2,2,2,2,2,2,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,1,1,3,3,3,3,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,3,3,3,3,3,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,1,5,2,2,2,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,1,1,2,2,1,4,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,2,2,2,2,1,4,4,1,1,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,2,2,2,2,1,4,4,4,4,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,1,0,3,3,2,2,2,2,2,2,2,2,1,4,4,4,4,4,1,0],
+    [0,0,1,0,0,0,0,0,0,0,0,0,1,0,3,3,3,2,2,2,2,2,2,2,1,4,4,4,4,1,0,0],
+    [0,0,1,1,0,0,0,0,0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,1,1,1,1,1,0,0,0],
+    [0,0,1,2,1,0,0,0,0,0,1,0,0,0,3,1,3,3,3,3,3,3,3,2,1,0,0,0,0,0,0,0],
+    [0,1,1,2,2,1,0,0,1,1,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,1,0,0,0,0,0,0],
+    [0,1,2,1,2,1,0,0,0,0,3,3,3,3,3,3,3,2,2,2,2,2,2,3,3,0,0,0,0,0,0,0],
+    [0,1,2,2,2,2,1,1,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,3,3,1,0,0,0,0,0],
+    [0,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,3,1,0,0,0,0],
+    [0,1,2,2,2,2,2,2,2,2,2,2,1,1,1,1,2,2,2,2,2,2,1,2,2,3,3,1,0,0,0,0],
+    [0,1,2,2,2,2,2,2,1,1,1,1,1,0,2,2,2,2,2,2,2,2,1,2,2,3,3,3,1,0,0,0],
+    [0,0,1,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,3,3,3,1,0,0,0],
+    [0,0,1,2,2,2,2,2,2,1,1,1,1,1,1,2,2,2,2,2,2,2,1,2,2,3,3,3,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,1,2,3,3,3,3,1,0,0,0],
+    [0,0,0,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1,2,2,3,3,3,1,0,0,0,0],
+    [0,0,0,0,1,3,2,2,2,2,2,2,1,0,2,2,2,2,2,1,1,2,2,3,3,3,3,1,0,0,0,0],
+    [0,0,0,0,0,1,3,3,2,2,2,2,2,0,1,1,1,1,1,2,2,2,3,3,3,3,1,0,0,0,0,0],
+    [0,0,0,0,0,0,1,3,3,3,2,2,2,2,2,2,2,2,2,2,3,3,3,3,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,1,3,3,3,3,3,3,3,3,3,3,3,3,3,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0]
+  ];
+
+  drawSpriteCentered(targetFrame, quack, [
+    "#181818", // 1 contorno preto
+    "#f6ec15", // 2 amarelo principal
+    "#f4ca19", // 3 sombra amarela
+    "#fa5a22", // 4 laranja do bico
+    "#ffffff"  // 5 branco do olho
+  ]);
+
+  return targetFrame;
+}
+
+function createMushroomPreset() {
+  const targetFrame = createEmptyFrame();
+  const mushroom = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,3,3,1,1,1,1,1,1,1,1,1,1,1,1,3,3,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,3,3,1,1,1,1,1,1,1,1,1,1,1,1,3,3,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,3,0,0,0,0,0,0],
+    [0,0,0,0,3,3,1,1,1,1,2,2,2,2,1,1,1,1,2,2,2,2,1,1,1,1,3,3,0,0,0,0],
+    [0,0,0,0,3,3,1,1,1,1,2,2,2,2,1,1,1,1,2,2,2,2,1,1,1,1,3,3,0,0,0,0],
+    [0,0,3,3,1,1,1,1,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,1,1,3,3,0,0],
+    [0,0,3,3,1,1,1,1,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,1,1,3,3,0,0],
+    [0,0,3,3,1,1,1,1,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,1,1,3,3,0,0],
+    [0,0,3,3,1,1,1,1,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,1,1,3,3,0,0],
+    [0,3,3,2,2,2,1,1,1,1,2,2,2,2,1,1,1,1,1,1,2,2,2,2,1,1,1,1,2,3,3,0],
+    [0,3,3,2,2,2,1,1,1,1,2,2,2,2,1,1,1,1,1,1,2,2,2,2,1,1,1,1,2,3,3,0],
+    [0,3,3,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,3,3,0],
+    [0,3,3,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,3,3,0],
+    [0,3,3,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,3,3,0],
+    [0,3,3,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,3,3,0],
+    [0,0,3,3,2,2,2,2,1,1,1,1,1,1,3,3,3,3,1,1,1,1,1,1,2,2,2,2,3,3,0,0],
+    [0,0,3,3,2,2,2,2,1,1,1,1,1,1,3,3,3,3,1,1,1,1,1,1,2,2,2,2,3,3,0,0],
+    [0,0,0,0,3,3,3,3,3,3,3,3,3,3,4,4,4,4,3,3,3,3,3,3,3,3,3,3,0,0,0,0],
+    [0,0,0,0,3,3,3,3,3,3,3,3,3,3,4,4,4,4,3,3,3,3,3,3,3,3,3,3,0,0,0,0],
+    [0,0,0,0,0,0,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,4,4,4,4,3,3,4,4,4,4,3,3,4,4,4,4,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,3,3,4,4,4,4,3,3,4,4,4,4,3,3,4,4,4,4,3,3,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,3,3,4,4,4,4,4,4,4,4,4,4,4,4,3,3,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,3,3,4,4,4,4,4,4,4,4,4,4,4,4,3,3,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  ];
+  drawSpriteCentered(targetFrame, mushroom, ["#ff2d55", "#ffffff", "#1d1d1d", "#ffcc99"]);
+  return targetFrame;
+}
+
+function createFogoPreset() {
+  const targetFrame = createEmptyFrame();
+  const fogo = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,1,1,1,7,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,7,1,8,2,1,7,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,7,1,9,2,2,2,1,7,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,1,9,2,2,2,2,2,9,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,7,9,2,2,2,3,2,2,9,7,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,7,1,9,2,2,3,3,3,3,3,2,9,7,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,7,1,9,2,3,3,3,3,3,3,3,3,8,6,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,9,2,3,3,3,4,4,4,4,3,3,2,9,7,9,7,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,7,9,2,3,3,3,4,4,4,4,4,4,3,3,2,1,2,9,7,0,0,0,0,0,0],
+    [0,0,0,0,7,1,7,1,8,2,3,3,3,4,4,4,4,4,4,3,3,3,9,2,8,6,0,0,0,0,0,0],
+    [0,0,0,0,1,9,1,1,8,3,3,3,4,4,4,4,4,4,4,4,3,3,3,2,2,9,7,0,0,0,0,0],
+    [0,0,0,7,9,2,9,1,9,3,3,4,4,4,4,5,5,4,4,4,4,3,3,3,2,8,7,7,0,0,0,0],
+    [0,0,0,1,8,3,2,8,2,3,4,4,4,4,5,5,5,5,4,4,4,4,3,3,3,2,1,7,0,0,0,0],
+    [0,0,0,7,9,2,3,2,3,3,4,4,4,5,5,5,5,5,5,4,4,4,4,3,3,2,1,7,0,0,0,0],
+    [0,0,0,0,7,8,8,3,3,4,4,4,5,5,5,5,5,5,5,5,4,4,4,4,3,2,1,7,0,0,0,0],
+    [0,0,0,0,7,7,1,2,3,4,4,4,5,5,5,5,5,5,5,5,4,4,4,4,3,2,1,7,0,0,0,0],
+    [0,0,0,0,7,8,8,2,4,4,4,4,5,5,5,5,5,5,5,5,4,4,4,4,4,2,2,1,0,0,0,0],
+    [0,0,0,0,9,2,2,3,4,4,5,6,5,5,5,5,5,5,5,5,6,5,4,4,4,3,2,1,0,0,0,0],
+    [0,0,0,0,9,2,2,3,4,6,7,7,7,5,5,5,5,5,5,7,7,7,6,4,4,3,8,7,0,0,0,0],
+    [0,0,0,0,9,2,3,3,6,7,7,1,6,5,5,5,5,5,5,7,1,7,7,6,4,2,2,9,0,0,0,0],
+    [0,0,0,0,9,2,3,3,6,7,7,1,6,5,5,5,5,5,5,7,1,7,7,7,4,3,2,1,0,0,0,0],
+    [0,0,0,0,6,9,3,3,5,7,7,7,7,5,5,5,5,5,5,7,7,7,7,5,4,2,2,1,0,0,0,0],
+    [0,7,7,7,7,1,2,3,4,5,5,6,4,2,2,2,2,2,3,5,6,5,5,4,3,2,8,1,7,7,7,0],
+    [7,7,1,1,1,1,2,3,3,4,4,5,3,2,2,2,2,2,2,5,5,4,4,3,3,8,1,1,1,1,7,7],
+    [7,1,8,8,8,8,1,2,2,4,4,4,5,2,2,2,2,2,5,5,4,4,3,2,8,8,8,8,1,8,1,7],
+    [9,8,8,8,8,9,8,1,1,9,2,4,5,5,5,5,5,5,5,4,3,9,9,1,8,8,9,8,8,9,10,1],
+    [9,9,9,8,8,9,9,9,8,1,1,8,8,8,9,8,8,8,9,8,8,1,1,8,9,9,9,8,8,9,10,1],
+    [9,9,9,9,9,9,9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,9,9,8,8,9,9,10,1],
+    [9,8,8,8,8,8,8,9,9,9,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,9,8,1,8,10,1],
+    [9,9,9,9,8,9,8,8,8,8,9,9,8,8,9,8,8,8,9,8,8,8,9,8,8,8,9,8,1,9,10,1],
+    [9,8,8,8,9,9,9,9,9,9,9,8,8,8,8,8,8,8,8,9,9,9,9,9,8,8,8,8,1,8,9,1],
+    [7,8,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,7]
+  ];
+
+  drawSpriteCentered(targetFrame, fogo, [
+    "#362e2b", // 1 contorno escuro
+    "#be433a", // 2 vermelho escuro
+    "#e76939", // 3 vermelho/laranja
+    "#f29b37", // 4 laranja
+    "#f1cb75", // 5 amarelo
+    "#e7d7b3", // 6 amarelo claro
+    "#fefefd", // 7 branco
+    "#5f3d29", // 8 madeira escura
+    "#72513d", // 9 madeira média
+    "#91867d"  // 10 detalhe claro da madeira
+  ]);
+
+  return targetFrame;
+}
+
+function createUtfprPreset() {
+  const targetFrame = createEmptyFrame("#FFFFFF");
+
+  const utfpr = [
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,3,3,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,3,3,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,2,2,2,2,2,1,2,2,2,2,1,1,2,2,2,2,1,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,2,2,2,2,2,1,2,2,2,2,2,1,2,2,2,2,2,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,2,2,1,1,1,1,2,2,1,2,2,1,2,2,1,2,2,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,2,2,1,1,1,1,2,2,2,2,2,1,2,2,2,2,2,1,1],
+  [1,1,2,2,1,1,2,2,1,2,2,3,3,2,2,1,1,1,1,2,2,2,2,1,1,2,2,2,2,1,1,1],
+  [1,1,1,2,2,2,2,1,1,2,2,3,3,2,2,1,1,1,1,2,2,1,1,1,1,2,2,1,2,2,1,1],
+  [1,1,1,2,2,2,2,1,1,2,2,3,3,2,2,1,1,1,1,2,2,1,1,1,1,2,2,1,2,2,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2],
+  [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]
+];
+
+  drawSpriteCentered(targetFrame, utfpr, ["#FFFFFF", "#000000", "#FFCC29"]);
+  
+  return targetFrame;
+}
+
+function createNoctuaPreset() {
+  const targetFrame = createEmptyFrame();
+
+  // 0 = transparente
+  // 1 = branco (#FFFFFF)
+  const owl = [
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,1,1,0,1,1,0,0,1,1,0,1,1,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,1,1,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,0,1,1,1,0,1,1,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,0,1,1,1,0,0,0,0,1,1,1,0,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,0,0,1,0,0,1,1,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,0,1,1,1,1,0,1,1,0,1,1,1,1,0,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,0,1,0,0,0,0,1,0,0,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,0,1,1,1,1,0,1,0,0,1,0,1,1,1,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,0,0,0,0,1,0,1,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,0,1,0,1,1,1,0,1,0,0,1,0,1,1,1,0,1,0,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,0,0,0,0,1,1,0,1,0,0,1,0,0,1,0,0,0,0,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,0,1,1,1,1,0,0,1,1,1,1,0,0,1,1,1,1,0,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,0,0,0,0,0,1,1,1,1,1,1,0,0,1,1,1,0,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,0,1,0,0,0,0,1,1,1,1,0,0,0,0,1,0,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,0,0,1,1,0,0,1,1,1,1,0,0,1,1,0,0,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,1,0,1,1,0,0,1,1,1,1,0,0,1,1,0,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,0,0,0,0,1,1,1,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,0,0,1,1,1,1,1,1,1,1,0,0,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,1,0,1,1,1,0,0,0,1,1,0,1,1,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  ];
+
+  drawSpriteCentered(targetFrame, owl, ["#FFFFFF"]);
+
+  return targetFrame;
+}
+
+
+function createRobotnikPreset() {
+  const targetFrame = createEmptyFrame();
+
+  const robotnik = [
+    [0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,6,6,6,6,1,0,0,0,0,1,6,6,6,6,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,6,6,6,1,1,6,0,0,0,1,6,6,6,1,6,6,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,6,6,1,8,1,6,1,1,1,1,6,6,1,8,1,6,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,6,6,6,1,6,6,6,6,6,1,6,6,1,1,8,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,6,6,6,6,6,1,1,1,6,1,6,6,6,1,1,6,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,6,6,6,0,3,2,2,1,6,1,6,6,6,6,6,6,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,1,2,2,2,2,2,1,6,6,6,6,6,1,1,6,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,3,2,2,2,2,2,2,2,2,1,1,1,1,1,2,3,1,6,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,2,2,2,2,2,2,2,1,1,2,2,2,2,2,3,1,6,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,2,1,2,2,2,2,2,1,1,1,1,2,2,2,2,2,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,3,1,1,1,2,2,2,1,1,1,1,1,2,2,2,2,2,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,1,3,1,1,8,1,2,1,1,8,1,1,1,1,2,2,2,1,1,0,0,0,0,0,0,0],
+    [0,0,1,0,1,0,1,3,2,1,1,1,4,1,1,1,1,2,1,1,2,2,2,2,3,1,0,0,0,0,0,0],
+    [0,0,1,1,1,1,1,1,1,4,4,4,4,1,1,1,2,1,4,4,1,2,1,2,2,3,1,0,0,0,0,0],
+    [0,0,0,1,1,1,4,4,4,4,1,1,4,4,0,4,4,4,4,1,1,1,1,1,2,3,1,0,0,0,0,0],
+    [0,1,1,1,4,0,1,1,4,4,4,4,4,4,4,4,1,1,1,1,1,1,1,2,2,0,0,0,0,0,0,0],
+    [1,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,1,4,1,1,2,2,1,0,0,0,0,0,0,0],
+    [1,4,4,4,1,1,1,1,4,4,4,4,4,4,1,1,1,1,4,4,1,2,2,1,0,0,0,0,0,0,0,0],
+    [0,1,1,1,4,4,4,1,1,1,4,4,1,1,4,4,4,4,1,1,2,2,3,0,0,0,0,0,0,0,0,0],
+    [0,0,0,1,4,4,4,4,4,4,1,1,4,4,1,1,1,1,3,2,2,3,1,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,1,1,1,1,1,1,1,1,1,1,3,3,2,2,2,2,2,3,1,6,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,5,1,1,3,2,2,2,1,1,1,1,1,5,1,1,1,1,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,5,5,1,1,1,1,1,5,5,5,5,5,1,1,5,5,5,1,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,5,1,1,5,5,5,5,5,5,6,1,1,1,5,5,5,5,5,5,1,0,0],
+    [0,0,0,0,0,0,0,1,6,6,6,6,6,1,1,1,1,1,1,1,6,5,5,5,6,5,5,5,5,5,1,0],
+    [0,0,0,0,0,0,1,6,5,5,5,5,5,1,1,1,6,5,5,5,5,5,5,6,5,5,5,5,5,5,1,0],
+    [0,0,0,0,0,0,5,5,5,5,5,5,5,1,6,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6,0],
+    [0,0,0,0,0,1,5,5,5,5,5,5,5,6,5,5,5,5,5,5,5,5,1,5,5,5,5,5,5,5,5,1],
+    [0,0,0,0,0,1,5,5,5,5,5,5,1,5,5,5,5,5,5,5,5,5,1,5,5,5,5,5,5,5,5,1],
+    [0,0,0,0,0,1,5,5,5,5,5,5,1,5,5,5,5,5,5,5,5,5,1,5,5,5,5,5,5,5,5,1],
+    [0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+  ];
+
+  drawSpriteCentered(targetFrame, robotnik, [
+    "#181818", // 0
+    "#ffffff", // 1
+    "#fcfcfc", // 2
+    "#fffb00", // 3
+    "#ff0000", // 4
+    "#b60006", // 5
+    "#96230e", // 6
+    "#00cbfd", // 7
+    "#24e7ff"  // 8
+  ]);
+
+  return targetFrame;
+}
+
+function stopDrawing(event) {
+  if (event && typeof canvas.hasPointerCapture === "function") {
+    if (canvas.hasPointerCapture(event.pointerId)) {
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch (_) {}
+    }
+  }
+
+  isDrawing = false;
+  lastPaintedCell = null;
+}
+
+canvas.addEventListener("pointerdown", (event) => {
+  isDrawing = true;
+  lastPaintedCell = null;
+  canvas.setPointerCapture(event.pointerId);
+  processPointerEvent(event);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  if (!isDrawing) return;
+  processPointerEvent(event);
+});
+
+canvas.addEventListener("pointerup", (event) => {
+  processPointerEvent(event);
+  stopDrawing(event);
+});
+
+canvas.addEventListener("pointercancel", (event) => {
+  stopDrawing(event);
+});
+
+canvas.addEventListener("lostpointercapture", () => {
+  isDrawing = false;
+  lastPaintedCell = null;
+});
+
+clearBtn.addEventListener("click", clearFrame);
+presetBtn.addEventListener("click", () => openModal(presetModal));
+
+toggleColorsBtn.addEventListener("click", () => {
+  const isHiddenNow = paintToolbar.classList.toggle("is-hidden");
+
+  if (isHiddenNow) {
+    toggleColorsBtn.textContent = "Cores";
+    card.classList.remove("colors-open");
+  } else {
+    toggleColorsBtn.textContent = "Fechar cores";
+    card.classList.add("colors-open");
+  }
+});
+
+document.querySelectorAll("[data-close]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const modalId = button.getAttribute("data-close");
+    closeModal(document.getElementById(modalId));
+  });
+});
+
+window.addEventListener("click", (event) => {
+  if (event.target === presetModal) closeModal(presetModal);
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeModal(presetModal);
+  }
+});
+
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setPaintMode(button.dataset.mode);
+  });
+});
+
+swatchButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setSelectedColor(button.dataset.color);
+  });
+});
+
+colorPicker.addEventListener("input", (event) => {
+  setSelectedColor(event.target.value);
+});
+
+presetButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const presetName = button.dataset.preset;
+    applyPreset(presetName);
+  });
+});
+
+let renderScheduled = false;
+
+function scheduleRender() {
+  if (renderScheduled) return;
+
+  renderScheduled = true;
+
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    render();
+  });
+}
+
+
+const CONSOLE_EXPORT_INTERVAL_MS = 100;
+let consoleExportScheduled = false;
+let consoleExportTimer = null;
+let lastConsoleExportAt = 0;
+
+function writeMatrixToConsoleNow() {
+  window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+  console.clear();
+  console.log(frameToRgbMatrixString(frame));
+  lastConsoleExportAt = performance.now();
+  consoleExportScheduled = false;
+  consoleExportTimer = null;
+}
+
+function scheduleConsoleExport() {
+  window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+
+  if (consoleExportScheduled) return;
+
+  const now = performance.now();
+  const wait = Math.max(0, CONSOLE_EXPORT_INTERVAL_MS - (now - lastConsoleExportAt));
+  consoleExportScheduled = true;
+
+  if (wait === 0) {
+    requestAnimationFrame(writeMatrixToConsoleNow);
+    return;
+  }
+
+  consoleExportTimer = setTimeout(() => {
+    requestAnimationFrame(writeMatrixToConsoleNow);
+  }, wait);
+}
+
+window.forceConsoleMatrixUpdate = () => {
+  if (consoleExportTimer) {
+    clearTimeout(consoleExportTimer);
+    consoleExportTimer = null;
+  }
+  writeMatrixToConsoleNow();
+};
+
+setSelectedColor(selectedColor);
+applyPresetHoverColors();
+render();
+scheduleConsoleExport();

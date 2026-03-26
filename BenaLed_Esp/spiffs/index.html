@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BenaLed</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+
+  <div class="app">
+    <header class="topbar welcome-header">
+      <div>
+        <h1 class="welcome-title" data-text="BenaLed">
+          <span>BenaLed</span>
+        </h1>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="canvas-header">
+        <div class="canvas-heading">
+          <span class="canvas-title">Desenhe no quadro</span>
+          <p class="canvas-subtitle">
+            O que for desenhado aqui será reproduzido no painel
+          </p>
+        </div>
+
+        <div class="header-actions">
+
+          <div class="current-color-box">
+            <span id="currentColorLabel" class="current-color-label">Cor atual: </span>
+            <div id="currentColorPreview" class="current-color-preview"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="canvas-shell">
+        <div class="canvas-wrapper">
+          <canvas id="ledCanvas" width="640" height="640"></canvas>
+        </div>
+      </div>
+
+      <div id="paintToolbar" class="paint-toolbar is-hidden">
+        <div class="tool-group mode-group">
+          <button type="button" class="tool-btn is-active" data-mode="paint">Pintar</button>
+          <button type="button" class="tool-btn" data-mode="eraser">Borracha</button>
+          <button type="button" class="tool-btn rainbow-tool" data-mode="rainbow">Rainbow</button>
+        </div>
+
+        <div class="tool-group inline-palette">
+          <button type="button" class="color-swatch" data-color="#ff9500" style="background:#ff9500;"></button>
+          <button type="button" class="color-swatch" data-color="#ffd60a" style="background:#ffd60a;"></button>
+          <button type="button" class="color-swatch" data-color="#34c759" style="background:#34c759;"></button>
+          <button type="button" class="color-swatch" data-color="#0a84ff" style="background:#0a84ff;"></button>
+          <button type="button" class="color-swatch" data-color="#bf5af2" style="background:#bf5af2;"></button>
+          <button type="button" class="color-swatch" data-color="#ffffff" style="background:#ffffff;"></button>
+          <button type="button" class="color-swatch" data-color="#ff2d55" style="background:#ff2d55;"></button>
+          <label class="color-wheel-picker" title="Cor personalizada">
+            <input type="color" id="colorPicker" value="#00eeff" aria-label="Cor personalizada" />
+          </label>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="toggleColorsBtn" class="btn btn-colors">Cores</button>
+        <button id="presetBtn" class="btn btn-presets">Modelos</button>
+        <button id="clearBtn" class="btn btn-danger">Limpar tela</button>
+      </div>
+    </main>
+
+  <div id="presetModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Cátalogo</h2>
+        <button class="close-btn" data-close="presetModal" aria-label="Fechar">&times;</button>
+      </div>
+
+      <div class="preset-grid">
+        <button class="preset-item" data-preset="noctua">Noctua</button>
+        <button class="preset-item" data-preset="robotnik">Robotnik</button>
+        <button class="preset-item" data-preset="utfpr">UTFPR</button>
+        <button class="preset-item" data-preset="parque">PTPB</button>
+        <button class="preset-item" data-preset="quack">Pato</button>
+        <button class="preset-item" data-preset="alien">Alien</button>
+        <button class="preset-item" data-preset="mushroom">Cogumelo</button>
+        <button class="preset-item" data-preset="fogo">Fogo</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
