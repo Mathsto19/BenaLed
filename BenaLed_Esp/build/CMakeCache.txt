@@ -23,9 +23,6 @@ BenaLed_esp_IS_TOP_LEVEL:STATIC=ON
 //Value Computed by CMake
 BenaLed_esp_SOURCE_DIR:STATIC=C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp
 
-//No help, variable specified on the command line.
-CCACHE_ENABLE:UNINITIALIZED=False
-
 //Path to a program.
 CMAKE_ADDR2LINE:FILEPATH=C:/Espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line.exe
 
@@ -369,10 +366,10 @@ Mbed TLS_IS_TOP_LEVEL:STATIC=OFF
 Mbed TLS_SOURCE_DIR:STATIC=C:/esp/v6.0/esp-idf/components/mbedtls/mbedtls
 
 //No help, variable specified on the command line.
-PYTHON:UNINITIALIZED=C:\Espressif\tools\python\v6.0\venv\Scripts\python.exe
+PYTHON_DEPS_CHECKED:UNINITIALIZED=1
 
 //No help, variable specified on the command line.
-PYTHON_DEPS_CHECKED:UNINITIALIZED=1
+SDKCONFIG:UNINITIALIZED=c:\Users\mathe\Downloads\Estagio\BenaLed\BenaLed_Esp\sdkconfig
 
 //Value Computed by CMake
 TF-PSA-Crypto_BINARY_DIR:STATIC=C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto

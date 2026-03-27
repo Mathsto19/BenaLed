@@ -1,7 +1,7 @@
 {
     "version":            "1.3",
     "project_name":       "BenaLed_esp",
-    "project_version":    "f4d664e-dirty",
+    "project_version":    "90d2767-dirty",
     "project_path":       "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp",
     "idf_path":           "C:/esp/v6.0/esp-idf",
     "build_dir":          "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build",
