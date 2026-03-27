@@ -15,11 +15,28 @@
 #include "nvs_flash.h"
 
 #define WIFI_AP_SSID            "BenaLed"
-#define WIFI_AP_PASS            "12345678"
+#define WIFI_AP_PASS            ""
 #define WIFI_AP_MAX_CONN        4
 #define MAX_MATRIX_BODY_SIZE    16384
+#define PORTAL_URL              "http://192.168.4.1"  
 
 static const char *TAG = "BENALED";
+
+static esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type);
+static esp_err_t captive_redirect_handler(httpd_req_t *req);
+static esp_err_t index_get_handler(httpd_req_t *req);
+static esp_err_t css_get_handler(httpd_req_t *req);
+static esp_err_t js_get_handler(httpd_req_t *req);
+static esp_err_t matrix_post_handler(httpd_req_t *req);
+static esp_err_t favicon_get_handler(httpd_req_t *req);
+
+static esp_err_t captive_redirect_handler(httpd_req_t *req)
+{
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1");  // ✅ IP, não URL
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
 
 static esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type)
 {
@@ -60,14 +77,6 @@ static esp_err_t css_get_handler(httpd_req_t *req)
 static esp_err_t js_get_handler(httpd_req_t *req)
 {
     return send_file(req, "/spiffs/app.js", "application/javascript");
-}
-
-static esp_err_t redirect_to_root_handler(httpd_req_t *req)
-{
-    httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
-    httpd_resp_send(req, NULL, 0);
-    return ESP_OK;
 }
 
 static esp_err_t matrix_post_handler(httpd_req_t *req)
@@ -195,7 +204,7 @@ static void init_wifi_softap(void)
     ESP_LOGI(TAG, "Wi-Fi AP iniciado");
     ESP_LOGI(TAG, "SSID: %s", WIFI_AP_SSID);
     ESP_LOGI(TAG, "Senha: %s", WIFI_AP_PASS);
-    ESP_LOGI(TAG, "Abra no navegador: http://192.168.4.1/");
+    ESP_LOGI(TAG, "Abra no navegador: %s", PORTAL_URL);
 }
 
 static void dns_server_task(void *arg)
@@ -224,7 +233,7 @@ static void dns_server_task(void *arg)
 
     while (1) {
         uint8_t rx[512];
-        uint8_t tx[512];
+        uint8_t response[512];
 
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -235,52 +244,39 @@ static void dns_server_task(void *arg)
             continue;
         }
 
-        int qname_end = 12;
-        while (qname_end < len && rx[qname_end] != 0) {
-            qname_end += rx[qname_end] + 1;
-        }
+        // ✅ CÓPIA CORRETA
+        memcpy(response, rx, len);
 
-        if (qname_end + 5 >= len) {
-            continue;
-        }
+        // ✅ FLAGS CORRETAS
+        response[2] = 0x81;
+        response[3] = 0x80;
 
-        memcpy(tx, rx, qname_end + 5);
+        // ✅ CONTAR RESPOSTAS
+        response[6] = 0x00;
+        response[7] = 0x01;
 
-        tx[2] = 0x81;
-        tx[3] = 0x80;
+        int resp_len = len;
 
-        tx[6] = 0x00;
-        tx[7] = 0x01;
-        tx[8] = 0x00;
-        tx[9] = 0x00;
-        tx[10] = 0x00;
-        tx[11] = 0x00;
+        // ✅ ADICIONAR REGISTRO A
+        response[resp_len++] = 0xC0;
+        response[resp_len++] = 0x0C;
+        response[resp_len++] = 0x00;
+        response[resp_len++] = 0x01; // Tipo A
+        response[resp_len++] = 0x00;
+        response[resp_len++] = 0x01; // Classe IN
+        response[resp_len++] = 0x00;
+        response[resp_len++] = 0x00; // TTL
+        response[resp_len++] = 0x00;
+        response[resp_len++] = 0x3C; // TTL = 60s
+        response[resp_len++] = 0x00;
+        response[resp_len++] = 0x04; // rdlength = 4
+        response[resp_len++] = 192;  // IP
+        response[resp_len++] = 168;
+        response[resp_len++] = 4;
+        response[resp_len++] = 1;
 
-        int p = qname_end + 5;
-
-        tx[p++] = 0xC0;
-        tx[p++] = 0x0C;
-
-        tx[p++] = 0x00;
-        tx[p++] = 0x01;
-
-        tx[p++] = 0x00;
-        tx[p++] = 0x01;
-
-        tx[p++] = 0x00;
-        tx[p++] = 0x00;
-        tx[p++] = 0x00;
-        tx[p++] = 0x00;
-
-        tx[p++] = 0x00;
-        tx[p++] = 0x04;
-
-        tx[p++] = 192;
-        tx[p++] = 168;
-        tx[p++] = 4;
-        tx[p++] = 1;
-
-        sendto(sock, tx, p, 0, (struct sockaddr *)&client_addr, client_len);
+        sendto(sock, response, resp_len, 0,
+               (struct sockaddr *)&client_addr, client_len);
     }
 }
 
@@ -289,7 +285,7 @@ static httpd_handle_t start_webserver(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.server_port = 80;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 20;
     config.stack_size = 8192;
 
     httpd_handle_t server = NULL;
@@ -337,41 +333,68 @@ static httpd_handle_t start_webserver(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t generate_204_uri = {
+        .uri = "/generate_204",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t gen_204_uri = {
-    .uri = "/generate_204",
-    .method = HTTP_GET,
-    .handler = redirect_to_root_handler,
-    .user_ctx = NULL,
+        .uri = "/gen_204",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = NULL,
     };
 
     httpd_uri_t hotspot_detect_uri = {
         .uri = "/hotspot-detect.html",
         .method = HTTP_GET,
-        .handler = redirect_to_root_handler,
+        .handler = captive_redirect_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t connecttest_uri = {
         .uri = "/connecttest.txt",
         .method = HTTP_GET,
-        .handler = redirect_to_root_handler,
+        .handler = captive_redirect_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t ncsi_uri = {
         .uri = "/ncsi.txt",
         .method = HTTP_GET,
-        .handler = redirect_to_root_handler,
+        .handler = captive_redirect_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t fwlink_uri = {
+        .uri = "/fwlink",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t success_txt_uri = {
+        .uri = "/success.txt",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
+        .user_ctx = NULL,
+    };
+
+    httpd_uri_t library_test_uri = {
+        .uri = "/library/test/success.html",
+        .method = HTTP_GET,
+        .handler = captive_redirect_handler,
         .user_ctx = NULL,
     };
 
     httpd_uri_t wildcard_uri = {
         .uri = "/*",
         .method = HTTP_GET,
-        .handler = redirect_to_root_handler,
+        .handler = captive_redirect_handler,
         .user_ctx = NULL,
     };
-
 
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_html_uri));
@@ -379,11 +402,18 @@ static httpd_handle_t start_webserver(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &js_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &matrix_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &favicon_uri));
+
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &generate_204_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &gen_204_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &hotspot_detect_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &connecttest_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &ncsi_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &fwlink_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &success_txt_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &library_test_uri));
+
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &wildcard_uri));
+
     ESP_LOGI(TAG, "Servidor HTTP iniciado na porta %d", config.server_port);
     return server;
 }
