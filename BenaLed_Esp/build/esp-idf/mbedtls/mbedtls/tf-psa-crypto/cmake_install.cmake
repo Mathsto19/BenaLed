@@ -39,16 +39,16 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/include/cmake_install.cmake")
-  include("C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/core/cmake_install.cmake")
-  include("C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/drivers/cmake_install.cmake")
-  include("C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/pkgconfig/cmake_install.cmake")
+  include("C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/include/cmake_install.cmake")
+  include("C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/core/cmake_install.cmake")
+  include("C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/drivers/cmake_install.cmake")
+  include("C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/pkgconfig/cmake_install.cmake")
 
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/install_local_manifest.txt"
+  file(WRITE "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/esp-idf/mbedtls/mbedtls/tf-psa-crypto/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

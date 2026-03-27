@@ -22,4 +22,4 @@ set confirm off
 set confirm on
 
 # Load application symbols
-file C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader/bootloader.elf
+file C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader/bootloader.elf

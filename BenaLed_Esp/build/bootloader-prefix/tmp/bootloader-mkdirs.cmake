@@ -10,18 +10,18 @@ if(NOT EXISTS "C:/esp/v6.0/esp-idf/components/bootloader/subproject")
   file(MAKE_DIRECTORY "C:/esp/v6.0/esp-idf/components/bootloader/subproject")
 endif()
 file(MAKE_DIRECTORY
-  "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader"
-  "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix"
-  "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix/tmp"
-  "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp"
-  "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix/src"
-  "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp"
+  "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader"
+  "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix"
+  "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix/tmp"
+  "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp"
+  "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix/src"
+  "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp"
 )
 
 set(configSubDirs )
 foreach(subDir IN LISTS configSubDirs)
-    file(MAKE_DIRECTORY "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
+    file(MAKE_DIRECTORY "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
 endforeach()
 if(cfgdir)
-  file(MAKE_DIRECTORY "C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
+  file(MAKE_DIRECTORY "C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
 endif()

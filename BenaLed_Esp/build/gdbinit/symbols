@@ -18,8 +18,8 @@ end
 
 # Load bootloader symbols
 set confirm off
-    add-symbol-file C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/bootloader/bootloader.elf
+    add-symbol-file C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/bootloader/bootloader.elf
 set confirm on
 
 # Load application symbols
-file C:/Users/mathe/Downloads/Estagio/BenaLed_Esp/build/BenaLed_esp.elf
+file C:/Users/mathe/Downloads/Estagio/BenaLed/BenaLed_Esp/build/BenaLed_esp.elf
