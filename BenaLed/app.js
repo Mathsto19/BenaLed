@@ -811,24 +811,40 @@ function stopDrawing(event) {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+
   isDrawing = true;
   lastPaintedCell = null;
-  canvas.setPointerCapture(event.pointerId);
-  processPointerEvent(event);
+
+  if (typeof canvas.setPointerCapture === "function") {
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch (_) {}
+  }
+
+  drawFromEvent(event);
+  render();
 });
 
 canvas.addEventListener("pointermove", (event) => {
   if (!isDrawing) return;
+  event.preventDefault();
   processPointerEvent(event);
 });
 
 canvas.addEventListener("pointerup", (event) => {
-  processPointerEvent(event);
+  event.preventDefault();
   stopDrawing(event);
 });
 
 canvas.addEventListener("pointercancel", (event) => {
   stopDrawing(event);
+});
+
+canvas.addEventListener("click", (event) => {
+  event.preventDefault();
+  drawFromEvent(event);
+  render();
 });
 
 canvas.addEventListener("lostpointercapture", () => {
