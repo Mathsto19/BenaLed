@@ -1,6 +1,11 @@
 const GRID_SIZE = 32;
 const OFF_COLOR = "#000000";
 
+const IMPORT_PREVIEW_SCALE = 12;
+const IMPORT_PREVIEW_SIZE = GRID_SIZE * IMPORT_PREVIEW_SCALE;
+const IMPORT_TRIM_ALPHA_THRESHOLD = 8;
+const IMPORT_CELL_ALPHA_THRESHOLD = 0.12;
+
 const canvas = document.getElementById("ledCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -19,12 +24,15 @@ const modeButtons = document.querySelectorAll("[data-mode]");
 const swatchButtons = document.querySelectorAll(".inline-palette .color-swatch");
 const presetButtons = document.querySelectorAll(".preset-item");
 
+const mediaBtn = document.getElementById("mediaBtn");
+const mediaInput = document.getElementById("mediaInput");
+
 let selectedColor = "#00eeff";
 let paintMode = "paint";
 let isDrawing = false;
 let lastPaintedCell = null;
 let rainbowPixelCounter = 0;
-const EASTER_EGG_COLOR = "#5c5d03"; // RGB(92, 93, 03)
+const EASTER_EGG_COLOR = "#5c5d05"; // RGB(92, 93, 05)
 
 let frame = createEmptyFrame();
 
@@ -195,6 +203,207 @@ function hexToRgba(hex, alpha) {
   const b = parseInt(value.slice(4, 6), 16);
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b]
+    .map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function createWorkCanvas(width, height) {
+  const workCanvas = document.createElement("canvas");
+  workCanvas.width = width;
+  workCanvas.height = height;
+  return workCanvas;
+}
+
+function getCanvas2dContext(targetCanvas) {
+  return targetCanvas.getContext("2d", { willReadFrequently: true });
+}
+
+function loadImageElementFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const imageUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      URL.revokeObjectURL(imageUrl);
+      resolve(img);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(imageUrl);
+      reject(new Error("Não foi possível decodificar a imagem."));
+    };
+
+    img.decoding = "async";
+    img.src = imageUrl;
+  });
+}
+
+function findVisibleBounds(imageData, width, height, alphaThreshold = IMPORT_TRIM_ALPHA_THRESHOLD) {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = (y * width + x) * 4;
+      const alpha = imageData[index + 3];
+
+      if (alpha > alphaThreshold) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX === -1 || maxY === -1) {
+    return {
+      x: 0,
+      y: 0,
+      width,
+      height,
+    };
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+  };
+}
+
+function buildImportPreviewCanvas(img) {
+  const sourceWidth = img.naturalWidth || img.width;
+  const sourceHeight = img.naturalHeight || img.height;
+
+  const sourceCanvas = createWorkCanvas(sourceWidth, sourceHeight);
+  const sourceCtx = getCanvas2dContext(sourceCanvas);
+
+  sourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+  sourceCtx.drawImage(img, 0, 0, sourceWidth, sourceHeight);
+
+  const sourceImageData = sourceCtx.getImageData(0, 0, sourceWidth, sourceHeight);
+  const visibleBounds = findVisibleBounds(
+    sourceImageData.data,
+    sourceWidth,
+    sourceHeight
+  );
+
+  const previewCanvas = createWorkCanvas(IMPORT_PREVIEW_SIZE, IMPORT_PREVIEW_SIZE);
+  const previewCtx = getCanvas2dContext(previewCanvas);
+
+  previewCtx.clearRect(0, 0, IMPORT_PREVIEW_SIZE, IMPORT_PREVIEW_SIZE);
+  previewCtx.imageSmoothingEnabled = true;
+  previewCtx.imageSmoothingQuality = "high";
+
+  const scale = Math.min(
+    IMPORT_PREVIEW_SIZE / visibleBounds.width,
+    IMPORT_PREVIEW_SIZE / visibleBounds.height
+  );
+
+  const drawWidth = Math.max(1, Math.round(visibleBounds.width * scale));
+  const drawHeight = Math.max(1, Math.round(visibleBounds.height * scale));
+
+  const offsetX = Math.floor((IMPORT_PREVIEW_SIZE - drawWidth) / 2);
+  const offsetY = Math.floor((IMPORT_PREVIEW_SIZE - drawHeight) / 2);
+
+  previewCtx.drawImage(
+    sourceCanvas,
+    visibleBounds.x,
+    visibleBounds.y,
+    visibleBounds.width,
+    visibleBounds.height,
+    offsetX,
+    offsetY,
+    drawWidth,
+    drawHeight
+  );
+
+  return previewCanvas;
+}
+
+function samplePreviewCanvasToFrame(previewCanvas) {
+  const previewCtx = getCanvas2dContext(previewCanvas);
+  const { width, height } = previewCanvas;
+  const pixels = previewCtx.getImageData(0, 0, width, height).data;
+
+  const blockWidth = width / GRID_SIZE;
+  const blockHeight = height / GRID_SIZE;
+
+  const newFrame = createEmptyFrame();
+
+  for (let gridY = 0; gridY < GRID_SIZE; gridY++) {
+    for (let gridX = 0; gridX < GRID_SIZE; gridX++) {
+      const startX = Math.floor(gridX * blockWidth);
+      const endX = Math.max(startX + 1, Math.floor((gridX + 1) * blockWidth));
+      const startY = Math.floor(gridY * blockHeight);
+      const endY = Math.max(startY + 1, Math.floor((gridY + 1) * blockHeight));
+
+      let weightedR = 0;
+      let weightedG = 0;
+      let weightedB = 0;
+      let alphaWeightSum = 0;
+      let alphaCoverage = 0;
+
+      const totalSamples = (endX - startX) * (endY - startY);
+
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const index = (y * width + x) * 4;
+          const r = pixels[index];
+          const g = pixels[index + 1];
+          const b = pixels[index + 2];
+          const a = pixels[index + 3] / 255;
+
+          alphaCoverage += a;
+
+          if (a <= 0) continue;
+
+          weightedR += r * a;
+          weightedG += g * a;
+          weightedB += b * a;
+          alphaWeightSum += a;
+        }
+      }
+
+      const coverageRatio = totalSamples > 0 ? alphaCoverage / totalSamples : 0;
+
+      if (alphaWeightSum <= 0 || coverageRatio < IMPORT_CELL_ALPHA_THRESHOLD) {
+        newFrame[gridY][gridX] = OFF_COLOR;
+        continue;
+      }
+
+      const finalR = Math.round(weightedR / alphaWeightSum);
+      const finalG = Math.round(weightedG / alphaWeightSum);
+      const finalB = Math.round(weightedB / alphaWeightSum);
+
+      newFrame[gridY][gridX] = rgbToHex(finalR, finalG, finalB);
+    }
+  }
+
+  return newFrame;
+}
+
+async function loadImageFileToFrame(file) {
+  try {
+    const img = await loadImageElementFromFile(file);
+    const previewCanvas = buildImportPreviewCanvas(img);
+    const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+    frame = convertedFrame;
+    render();
+    scheduleConsoleExport();
+  } catch (error) {
+    console.error(error);
+    alert("Não foi possível carregar a imagem selecionada.");
+  }
 }
 
 function isOffCell(color) {
@@ -809,8 +1018,7 @@ function createEasterEggPreset() {
 
   // 0 = transparente / fundo preto do quadro
   // 1 = branco
-  // 2 = vermelho escuro
-  // 3 = vermelho vivo
+  // 2 = vermelho vivo
   const spfc = [
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -824,20 +1032,20 @@ function createEasterEggPreset() {
     [0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0],
     [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
     [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
-    [0,1,1,3,2,2,2,2,2,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0],
-    [0,1,1,1,3,2,2,2,2,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0],
-    [0,0,1,1,1,2,2,2,2,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0],
-    [0,0,0,1,1,1,2,2,2,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0],
-    [0,0,0,0,1,1,1,2,2,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0],
-    [0,0,0,0,0,1,1,1,2,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0],
-    [0,0,0,0,0,1,1,1,1,2,2,2,2,2,3,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0],
-    [0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,1,1,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,1,1,1,2,2,2,2,3,1,1,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,1,1,1,2,2,2,3,1,1,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0,1,1,1,2,2,3,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0,0,1,1,1,2,3,1,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0,0,1,1,1,3,3,1,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0,0,0,1,1,1,3,1,1,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
+    [0,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0],
+    [0,1,1,1,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0],
+    [0,0,1,1,1,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0],
+    [0,0,0,1,1,1,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0],
+    [0,0,0,0,1,1,1,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0],
+    [0,0,0,0,0,1,1,1,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0],
+    [0,0,0,0,0,1,1,1,1,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0],
+    [0,0,0,0,0,0,1,1,1,1,2,2,2,2,2,1,1,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1,1,1,2,2,2,2,2,1,1,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,1,1,1,2,2,2,2,1,1,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,1,1,1,2,2,2,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,1,1,2,2,1,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,1,1,1,2,2,1,1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,1,1,1,2,1,1,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0],
     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -848,12 +1056,12 @@ function createEasterEggPreset() {
 
   drawSpriteCentered(targetFrame, spfc, [
     "#ffffff", // 1 branco
-    "#b20d15", // 2 vermelho escuro
-    "#ff0000"  // 3 vermelho vivo
+    "#ff0000", // 2 vermelho escuro
   ]);
 
   return targetFrame;
 }
+
 function stopDrawing(event) {
   if (event && typeof canvas.hasPointerCapture === "function") {
     if (canvas.hasPointerCapture(event.pointerId)) {
@@ -911,6 +1119,26 @@ canvas.addEventListener("lostpointercapture", () => {
 
 clearBtn.addEventListener("click", clearFrame);
 presetBtn.addEventListener("click", () => openModal(presetModal));
+
+mediaBtn.addEventListener("click", () => {
+  mediaInput.click();
+});
+
+mediaInput.addEventListener("change", (event) => {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  if (file.type.startsWith("image/")) {
+    loadImageFileToFrame(file);
+  } else if (file.type.startsWith("video/")) {
+    alert("Vídeo ainda não foi implementado. Por enquanto, selecione uma imagem.");
+  } else {
+    alert("Arquivo inválido.");
+  }
+
+  mediaInput.value = "";
+});
 
 toggleColorsBtn.addEventListener("click", () => {
   const isHiddenNow = paintToolbar.classList.toggle("is-hidden");

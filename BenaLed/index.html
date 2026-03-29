@@ -67,8 +67,16 @@
       <div class="controls">
         <button id="toggleColorsBtn" class="btn btn-colors">Cores</button>
         <button id="presetBtn" class="btn btn-presets">Modelos</button>
+        <button id="mediaBtn" class="btn btn-media">Foto/Vídeo</button>
         <button id="clearBtn" class="btn btn-danger">Limpar tela</button>
       </div>
+
+      <input
+        id="mediaInput"
+        type="file"
+        accept="image/*,video/*"
+        hidden
+      />
     </main>
 
   <div id="presetModal" class="modal hidden">
