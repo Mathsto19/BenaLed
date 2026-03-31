@@ -4,6 +4,7 @@ idf_component_register(
          "lib/httpd.c"
          "lib/dns_lib.c"
          "lib/wifi_lib.c"
+         "lib/webserver.c"
          "tasks/dns_task.c"
 
     INCLUDE_DIRS "." "lib" "lib/include" "tasks" "tasks/include"

@@ -19,10 +19,13 @@
 #define WIFI_AP_PASS ""
 #define WIFI_AP_MAX_CONN 4
 #define MAX_MATRIX_BODY_SIZE 16384
+#define MATRIX_WIDTH 32
+#define MATRIX_HEIGHT 32
+#define MATRIX_CHANNELS 3
+#define MATRIX_RGB_FRAME_SIZE (MATRIX_WIDTH * MATRIX_HEIGHT * MATRIX_CHANNELS)
+#define MATRIX_QUEUE_LEN 2
 #define PORTAL_URL "http://BenaLed.com"
 
 static const uint8_t AP_IP_BYTES[4] = {4, 3, 2, 1};
-
-static const char *TAG = "BENALED";
 
 #endif // APP_CONFIG_H
