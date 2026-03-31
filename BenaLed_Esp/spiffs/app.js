@@ -1,10 +1,13 @@
 const GRID_SIZE = 32;
 const OFF_COLOR = "#000000";
 
-const IMPORT_PREVIEW_SCALE = 12;
+const IS_MOBILE_DEVICE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const IMPORT_PREVIEW_SCALE = IS_MOBILE_DEVICE ? 4 : 8;
 const IMPORT_PREVIEW_SIZE = GRID_SIZE * IMPORT_PREVIEW_SCALE;
 const IMPORT_TRIM_ALPHA_THRESHOLD = 8;
 const IMPORT_CELL_ALPHA_THRESHOLD = 0.12;
+const MEDIA_PREVIEW_RENDER_INTERVAL_MS = IS_MOBILE_DEVICE ? 80 : 16;
+const MEDIA_PROCESS_INTERVAL_MS = IS_MOBILE_DEVICE ? 66 : 33;
 
 const canvas = document.getElementById("ledCanvas");
 const ctx = canvas.getContext("2d");
@@ -36,6 +39,15 @@ let activeGifUrl = null;
 let gifAnimationFrameId = null;
 let activeGifState = null;
 let gifPlaybackTimer = null;
+let lastMediaPreviewRenderAt = 0;
+let lastMediaProcessAt = 0;
+
+let reusableMediaSourceCanvas = null;
+let reusableMediaSourceCtx = null;
+let reusableMediaPreviewCanvas = null;
+let reusableMediaPreviewCtx = null;
+
+const rgbHexCache = new Map();
 
 let selectedColor = "#00eeff";
 let paintMode = "paint";
@@ -86,13 +98,34 @@ function frameToRgbPackedBytes(sourceFrame = frame) {
   for (let y = 0; y < GRID_SIZE; y++) {
     for (let x = 0; x < GRID_SIZE; x++) {
       const color = sourceFrame[y][x];
-      payload[index++] = parseInt(color.slice(1, 3), 16);
-      payload[index++] = parseInt(color.slice(3, 5), 16);
-      payload[index++] = parseInt(color.slice(5, 7), 16);
+      let rgb = rgbHexCache.get(color);
+
+      if (!rgb) {
+        rgb = [
+          Number.parseInt(color.slice(1, 3), 16),
+          Number.parseInt(color.slice(3, 5), 16),
+          Number.parseInt(color.slice(5, 7), 16),
+        ];
+        rgbHexCache.set(color, rgb);
+      }
+
+      payload[index++] = rgb[0];
+      payload[index++] = rgb[1];
+      payload[index++] = rgb[2];
     }
   }
 
   return payload;
+}
+
+function maybeRenderMediaPreview() {
+  const now = performance.now();
+  if ((now - lastMediaPreviewRenderAt) < MEDIA_PREVIEW_RENDER_INTERVAL_MS) {
+    return;
+  }
+
+  lastMediaPreviewRenderAt = now;
+  render();
 }
 
 window.getCurrentLedMatrix = () => frameToRgbMatrix(frame);
@@ -102,7 +135,17 @@ window.copyLedMatrixToClipboard = async () => {
   await navigator.clipboard.writeText(matrixString);
   return matrixString;
 };
-window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+window.benaLedLiveMatrix = [];
+
+const EXPORT_LIVE_MATRIX_TO_WINDOW = false;
+
+function updateLiveMatrixExport() {
+  if (!EXPORT_LIVE_MATRIX_TO_WINDOW) {
+    return;
+  }
+
+  window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+}
 
 function hslToHex(h, s, l) {
   s /= 100;
@@ -288,6 +331,30 @@ function createWorkCanvas(width, height) {
   return workCanvas;
 }
 
+function ensureReusableMediaCanvases(sourceWidth, sourceHeight) {
+  if (
+    !reusableMediaSourceCanvas ||
+    reusableMediaSourceCanvas.width !== sourceWidth ||
+    reusableMediaSourceCanvas.height !== sourceHeight
+  ) {
+    reusableMediaSourceCanvas = createWorkCanvas(sourceWidth, sourceHeight);
+    reusableMediaSourceCtx = getCanvas2dContext(reusableMediaSourceCanvas);
+  }
+
+  if (!reusableMediaPreviewCanvas) {
+    reusableMediaPreviewCanvas = createWorkCanvas(IMPORT_PREVIEW_SIZE, IMPORT_PREVIEW_SIZE);
+    reusableMediaPreviewCtx = getCanvas2dContext(reusableMediaPreviewCanvas);
+  }
+
+  if (
+    reusableMediaPreviewCanvas.width !== IMPORT_PREVIEW_SIZE ||
+    reusableMediaPreviewCanvas.height !== IMPORT_PREVIEW_SIZE
+  ) {
+    reusableMediaPreviewCanvas.width = IMPORT_PREVIEW_SIZE;
+    reusableMediaPreviewCanvas.height = IMPORT_PREVIEW_SIZE;
+  }
+}
+
 function getCanvas2dContext(targetCanvas) {
   return targetCanvas.getContext("2d", { willReadFrequently: true });
 }
@@ -399,6 +466,51 @@ function buildImportPreviewCanvas(img) {
   return previewCanvas;
 }
 
+function buildImportPreviewCanvasForMedia(img) {
+  const sourceWidth = img.videoWidth || img.naturalWidth || img.width;
+  const sourceHeight = img.videoHeight || img.naturalHeight || img.height;
+
+  ensureReusableMediaCanvases(sourceWidth, sourceHeight);
+
+  reusableMediaSourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+  reusableMediaSourceCtx.drawImage(img, 0, 0, sourceWidth, sourceHeight);
+
+  const sourceImageData = reusableMediaSourceCtx.getImageData(0, 0, sourceWidth, sourceHeight);
+  const visibleBounds = findVisibleBounds(
+    sourceImageData.data,
+    sourceWidth,
+    sourceHeight
+  );
+
+  reusableMediaPreviewCtx.clearRect(0, 0, IMPORT_PREVIEW_SIZE, IMPORT_PREVIEW_SIZE);
+  reusableMediaPreviewCtx.imageSmoothingEnabled = true;
+  reusableMediaPreviewCtx.imageSmoothingQuality = "high";
+
+  const scale = Math.min(
+    IMPORT_PREVIEW_SIZE / visibleBounds.width,
+    IMPORT_PREVIEW_SIZE / visibleBounds.height
+  );
+
+  const drawWidth = Math.max(1, Math.round(visibleBounds.width * scale));
+  const drawHeight = Math.max(1, Math.round(visibleBounds.height * scale));
+  const offsetX = Math.floor((IMPORT_PREVIEW_SIZE - drawWidth) / 2);
+  const offsetY = Math.floor((IMPORT_PREVIEW_SIZE - drawHeight) / 2);
+
+  reusableMediaPreviewCtx.drawImage(
+    reusableMediaSourceCanvas,
+    visibleBounds.x,
+    visibleBounds.y,
+    visibleBounds.width,
+    visibleBounds.height,
+    offsetX,
+    offsetY,
+    drawWidth,
+    drawHeight
+  );
+
+  return reusableMediaPreviewCanvas;
+}
+
 function samplePreviewCanvasToFrame(previewCanvas) {
   const previewCtx = getCanvas2dContext(previewCanvas);
   const { width, height } = previewCanvas;
@@ -459,6 +571,62 @@ function samplePreviewCanvasToFrame(previewCanvas) {
   }
 
   return newFrame;
+}
+
+function samplePreviewCanvasIntoFrame(previewCanvas, targetFrame) {
+  const previewCtx = getCanvas2dContext(previewCanvas);
+  const { width, height } = previewCanvas;
+  const pixels = previewCtx.getImageData(0, 0, width, height).data;
+
+  const blockWidth = width / GRID_SIZE;
+  const blockHeight = height / GRID_SIZE;
+
+  for (let gridY = 0; gridY < GRID_SIZE; gridY++) {
+    for (let gridX = 0; gridX < GRID_SIZE; gridX++) {
+      const startX = Math.floor(gridX * blockWidth);
+      const endX = Math.max(startX + 1, Math.floor((gridX + 1) * blockWidth));
+      const startY = Math.floor(gridY * blockHeight);
+      const endY = Math.max(startY + 1, Math.floor((gridY + 1) * blockHeight));
+
+      let weightedR = 0;
+      let weightedG = 0;
+      let weightedB = 0;
+      let alphaWeightSum = 0;
+      let alphaCoverage = 0;
+
+      const totalSamples = (endX - startX) * (endY - startY);
+
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const index = (y * width + x) * 4;
+          const r = pixels[index];
+          const g = pixels[index + 1];
+          const b = pixels[index + 2];
+          const a = pixels[index + 3] / 255;
+
+          alphaCoverage += a;
+          if (a <= 0) continue;
+
+          weightedR += r * a;
+          weightedG += g * a;
+          weightedB += b * a;
+          alphaWeightSum += a;
+        }
+      }
+
+      const coverageRatio = totalSamples > 0 ? alphaCoverage / totalSamples : 0;
+
+      if (alphaWeightSum <= 0 || coverageRatio < IMPORT_CELL_ALPHA_THRESHOLD) {
+        targetFrame[gridY][gridX] = OFF_COLOR;
+        continue;
+      }
+
+      const finalR = Math.round(weightedR / alphaWeightSum);
+      const finalG = Math.round(weightedG / alphaWeightSum);
+      const finalB = Math.round(weightedB / alphaWeightSum);
+      targetFrame[gridY][gridX] = rgbToHex(finalR, finalG, finalB);
+    }
+  }
 }
 
 async function loadImageFileToFrame(file) {
@@ -615,11 +783,16 @@ function stopActiveVideoPlayback() {
 
 
 function renderGifCanvasFrame(frameCanvas) {
-  const previewCanvas = buildImportPreviewCanvas(frameCanvas);
-  const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+  const now = performance.now();
+  if ((now - lastMediaProcessAt) < MEDIA_PROCESS_INTERVAL_MS) {
+    return;
+  }
 
-  frame = convertedFrame;
-  render();
+  lastMediaProcessAt = now;
+
+  const previewCanvas = buildImportPreviewCanvasForMedia(frameCanvas);
+  samplePreviewCanvasIntoFrame(previewCanvas, frame);
+  maybeRenderMediaPreview();
   scheduleConsoleExport();
 }
 
@@ -661,11 +834,16 @@ async function loadGifFileToFrame(file) {
 }
 
 function renderVideoFrameToFrame(video) {
-  const previewCanvas = buildImportPreviewCanvas(video);
-  const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+  const now = performance.now();
+  if ((now - lastMediaProcessAt) < MEDIA_PROCESS_INTERVAL_MS) {
+    return;
+  }
 
-  frame = convertedFrame;
-  render();
+  lastMediaProcessAt = now;
+
+  const previewCanvas = buildImportPreviewCanvasForMedia(video);
+  samplePreviewCanvasIntoFrame(previewCanvas, frame);
+  maybeRenderMediaPreview();
   scheduleConsoleExport();
 }
 
@@ -1533,7 +1711,7 @@ function scheduleRender() {
 }
 
 
-const ESP_SYNC_INTERVAL_MS = 100;
+const ESP_SYNC_INTERVAL_MS = 33;
 const ESP_MATRIX_WS_PATH = "/matrix";
 let espSyncScheduled = false;
 let espSyncTimer = null;
@@ -1587,12 +1765,18 @@ function connectMatrixWebSocket() {
 
 async function sendMatrixToEspNow() {
   const matrixPayload = frameToRgbPackedBytes(frame);
-  window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+  updateLiveMatrixExport();
 
   connectMatrixWebSocket();
 
   try {
     if (matrixWs && matrixWs.readyState === WebSocket.OPEN) {
+      if (matrixWs.bufferedAmount > matrixPayload.byteLength) {
+        // Keep only the newest frame to minimize end-to-end latency.
+        pendingMatrixPayload = matrixPayload;
+        return;
+      }
+
       matrixWs.send(matrixPayload);
       pendingMatrixPayload = null;
     } else {
@@ -1609,7 +1793,7 @@ async function sendMatrixToEspNow() {
 }
 
 function scheduleConsoleExport() {
-  window.benaLedLiveMatrix = frameToRgbMatrix(frame);
+  updateLiveMatrixExport();
 
   if (espSyncScheduled) return;
 
