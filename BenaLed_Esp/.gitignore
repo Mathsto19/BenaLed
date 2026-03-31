@@ -5,3 +5,6 @@ sdkconfig.old
 .devcontainer
 .vscode/
 microsoft.gpg
+./build
+./.vscode
+.vscode

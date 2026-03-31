@@ -33,7 +33,7 @@ static esp_err_t index_get_handler(httpd_req_t *req);
 static esp_err_t css_get_handler(httpd_req_t *req);
 static esp_err_t js_get_handler(httpd_req_t *req);
 static esp_err_t gifuct_get_handler(httpd_req_t *req);
-static esp_err_t matrix_post_handler(httpd_req_t *req);
+static esp_err_t matrix_ws_handler(httpd_req_t *req);
 static esp_err_t favicon_get_handler(httpd_req_t *req);
 
 static const char *benaled_http_method_str(httpd_method_t method);
@@ -144,45 +144,53 @@ static esp_err_t gifuct_get_handler(httpd_req_t *req)
     return send_file(req, "/spiffs/gifuct-js.min.js", "application/javascript");
 }
 
-static esp_err_t matrix_post_handler(httpd_req_t *req)
+static esp_err_t matrix_ws_handler(httpd_req_t *req)
 {
-    if (req->content_len <= 0 || req->content_len > MAX_MATRIX_BODY_SIZE) {
-        ESP_LOGE(TAG, "Payload invalido: %d bytes", req->content_len);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Payload invalido");
+    if (req->method == HTTP_GET) {
+        ESP_LOGI(TAG, "Cliente WebSocket conectado em /matrix");
+        return ESP_OK;
+    }
+
+    httpd_ws_frame_t ws_pkt = {
+        .final = true,
+        .fragmented = false,
+        .type = HTTPD_WS_TYPE_TEXT,
+        .payload = NULL,
+        .len = 0,
+    };
+
+    esp_err_t err = httpd_ws_recv_frame(req, &ws_pkt, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler tamanho do frame WS: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    if (ws_pkt.len == 0 || ws_pkt.len > MAX_MATRIX_BODY_SIZE) {
+        ESP_LOGE(TAG, "Frame WS invalido: %u bytes", (unsigned)ws_pkt.len);
         return ESP_FAIL;
     }
 
-    char *body = calloc(1, req->content_len + 1);
-    if (!body) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Sem memoria");
+    uint8_t *payload = calloc(1, ws_pkt.len + 1);
+    if (!payload) {
+        ESP_LOGE(TAG, "Sem memoria para frame WS");
         return ESP_ERR_NO_MEM;
     }
 
-    int received = 0;
-    while (received < req->content_len) {
-        int ret = httpd_req_recv(req, body + received, req->content_len - received);
-        if (ret <= 0) {
-            free(body);
-            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
-                httpd_resp_send_408(req);
-            } else {
-                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Falha ao ler POST");
-            }
-            return ESP_FAIL;
-        }
-        received += ret;
+    ws_pkt.payload = payload;
+    err = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Falha ao ler frame WS: %s", esp_err_to_name(err));
+        free(payload);
+        return err;
     }
 
-    body[req->content_len] = '\0';
+    payload[ws_pkt.len] = '\0';
 
     ESP_LOGI(TAG, "================ MATRIZ RECEBIDA ================");
-    ESP_LOGI(TAG, "%s", body);
+    ESP_LOGI(TAG, "%s", (char *)payload);
     ESP_LOGI(TAG, "=================================================");
 
-    free(body);
-
-    httpd_resp_set_type(req, "text/plain");
-    httpd_resp_sendstr(req, "OK");
+    free(payload);
     return ESP_OK;
 }
 
@@ -489,8 +497,9 @@ static httpd_handle_t start_webserver(void)
 
     httpd_uri_t matrix_uri = {
         .uri = "/matrix",
-        .method = HTTP_POST,
-        .handler = matrix_post_handler,
+        .method = HTTP_GET,
+        .handler = matrix_ws_handler,
+        .is_websocket = true,
         .user_ctx = NULL,
     };
 
