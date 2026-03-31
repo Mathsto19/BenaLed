@@ -6,6 +6,7 @@ idf_component_register(
          "lib/wifi_lib.c"
          "lib/webserver.c"
          "tasks/dns_task.c"
+         "tasks/matrix_task.c"
 
     INCLUDE_DIRS "." "lib" "lib/include" "tasks" "tasks/include"
     REQUIRES esp_http_server esp_wifi esp_event esp_netif spiffs nvs_flash

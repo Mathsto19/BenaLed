@@ -5,6 +5,7 @@
 #include "httpd.h"
 #include "wifi_lib.h"
 #include "dns_task.h"
+#include "matrix_task.h"
 #include "webserver.h"
 
 void app_main(void)
@@ -19,6 +20,7 @@ void app_main(void)
 
     init_spiffs();
     init_wifi_softap();
+    ESP_ERROR_CHECK(init_matrix_task());
     start_webserver();
     init_dns_task(NULL);
 }

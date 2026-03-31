@@ -1,5 +1,5 @@
 #include "dns_task.h"
-
+#define TAG "DNS_TASK"
 static void dns_server_task(void *arg)
 {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);

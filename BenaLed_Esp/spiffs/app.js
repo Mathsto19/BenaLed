@@ -79,6 +79,22 @@ function frameToRgbMatrixString(sourceFrame = frame, variableName = "liveFrame")
   return `const ${variableName} = [\n${rows}\n];`;
 }
 
+function frameToRgbPackedBytes(sourceFrame = frame) {
+  const payload = new Uint8Array(GRID_SIZE * GRID_SIZE * 3);
+  let index = 0;
+
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      const color = sourceFrame[y][x];
+      payload[index++] = parseInt(color.slice(1, 3), 16);
+      payload[index++] = parseInt(color.slice(3, 5), 16);
+      payload[index++] = parseInt(color.slice(5, 7), 16);
+    }
+  }
+
+  return payload;
+}
+
 window.getCurrentLedMatrix = () => frameToRgbMatrix(frame);
 window.getCurrentLedMatrixString = () => frameToRgbMatrixString(frame);
 window.copyLedMatrixToClipboard = async () => {
@@ -1524,7 +1540,7 @@ let espSyncTimer = null;
 let lastEspSyncAt = 0;
 let matrixWs = null;
 let matrixWsReconnectTimer = null;
-let pendingMatrixString = null;
+let pendingMatrixPayload = null;
 
 function getMatrixWebSocketUrl() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -1538,15 +1554,16 @@ function connectMatrixWebSocket() {
 
   try {
     matrixWs = new WebSocket(getMatrixWebSocketUrl());
+    matrixWs.binaryType = "arraybuffer";
   } catch (error) {
     console.error("Falha ao criar WebSocket para o ESP:", error);
     return;
   }
 
   matrixWs.addEventListener("open", () => {
-    if (pendingMatrixString) {
-      matrixWs.send(pendingMatrixString);
-      pendingMatrixString = null;
+    if (pendingMatrixPayload) {
+      matrixWs.send(pendingMatrixPayload);
+      pendingMatrixPayload = null;
     }
   });
 
@@ -1569,21 +1586,21 @@ function connectMatrixWebSocket() {
 }
 
 async function sendMatrixToEspNow() {
-  const matrixString = frameToRgbMatrixString(frame);
+  const matrixPayload = frameToRgbPackedBytes(frame);
   window.benaLedLiveMatrix = frameToRgbMatrix(frame);
 
   connectMatrixWebSocket();
 
   try {
     if (matrixWs && matrixWs.readyState === WebSocket.OPEN) {
-      matrixWs.send(matrixString);
-      pendingMatrixString = null;
+      matrixWs.send(matrixPayload);
+      pendingMatrixPayload = null;
     } else {
-      pendingMatrixString = matrixString;
+      pendingMatrixPayload = matrixPayload;
     }
   } catch (error) {
     console.error("Falha ao enviar matriz para o ESP via WS:", error);
-    pendingMatrixString = matrixString;
+    pendingMatrixPayload = matrixPayload;
   } finally {
     lastEspSyncAt = performance.now();
     espSyncScheduled = false;

@@ -1,4 +1,5 @@
 #include "httpd.h"
+#define TAG "HTTPD"
 
 const char *benaled_http_method_str(httpd_method_t method)
 {
@@ -74,6 +75,9 @@ esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type
     }
 
     httpd_resp_set_type(req, content_type);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    httpd_resp_set_hdr(req, "Pragma", "no-cache");
+    httpd_resp_set_hdr(req, "Expires", "0");
 
     char chunk[1024];
     size_t read_bytes = 0;

@@ -1,4 +1,5 @@
 #include "dns_lib.h"
+#define TAG "DNS"
 
 uint16_t dns_read_u16(const uint8_t *p)
 {
