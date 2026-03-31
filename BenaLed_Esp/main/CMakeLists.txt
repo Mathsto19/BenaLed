@@ -1,6 +1,9 @@
 idf_component_register(
     SRCS "main.c"
-    INCLUDE_DIRS "."
+         "app_config.c" 
+         "lib/httpd.c"
+
+    INCLUDE_DIRS "." "lib" "lib/include"
     REQUIRES esp_http_server esp_wifi esp_event esp_netif spiffs nvs_flash
 )
 

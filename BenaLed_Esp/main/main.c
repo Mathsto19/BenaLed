@@ -1,29 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "app_config.h"
+/* ============================= Constants ============================== */
 
-#include "lwip/sockets.h"
-#include "lwip/inet.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_event.h"
-#include "esp_http_server.h"
-#include "esp_log.h"
-#include "esp_netif.h"
-#include "esp_spiffs.h"
-#include "esp_wifi.h"
-#include "nvs_flash.h"
-
-#define WIFI_AP_SSID            "BenaLed"
-#define WIFI_AP_PASS            ""
-#define WIFI_AP_MAX_CONN        4
-#define MAX_MATRIX_BODY_SIZE    16384
-
-#define PORTAL_URL              "http://BenaLed.com"  
-static const uint8_t AP_IP_BYTES[4] = {4, 3, 2, 1};
-
-static const char *TAG = "BENALED";
-
+/* ======================== Forward Declarations ======================== */
 static esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type);
 
 static esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type);
@@ -43,13 +24,19 @@ static void register_captive_uri(httpd_handle_t server, const char *uri);
 static uint16_t dns_read_u16(const uint8_t *p);
 static size_t dns_skip_name(const uint8_t *packet, size_t packet_len, size_t offset);
 
+/* ======================= HTTP Logging / Captive ======================= */
 static const char *benaled_http_method_str(httpd_method_t method)
 {
-    switch (method) {
-        case HTTP_GET:  return "GET";
-        case HTTP_POST: return "POST";
-        case HTTP_HEAD: return "HEAD";
-        default:        return "OTHER";
+    switch (method)
+    {
+    case HTTP_GET:
+        return "GET";
+    case HTTP_POST:
+        return "POST";
+    case HTTP_HEAD:
+        return "HEAD";
+    default:
+        return "OTHER";
     }
 }
 
@@ -59,12 +46,14 @@ static void log_http_request(httpd_req_t *req)
     char ua[192] = {0};
 
     size_t host_len = httpd_req_get_hdr_value_len(req, "Host");
-    if (host_len > 0 && host_len < sizeof(host)) {
+    if (host_len > 0 && host_len < sizeof(host))
+    {
         httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
     }
 
     size_t ua_len = httpd_req_get_hdr_value_len(req, "User-Agent");
-    if (ua_len > 0 && ua_len < sizeof(ua)) {
+    if (ua_len > 0 && ua_len < sizeof(ua))
+    {
         httpd_req_get_hdr_value_str(req, "User-Agent", ua, sizeof(ua));
     }
 
@@ -102,7 +91,8 @@ static esp_err_t captive_redirect_head_handler(httpd_req_t *req)
 static esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type)
 {
     FILE *file = fopen(path, "rb");
-    if (!file) {
+    if (!file)
+    {
         ESP_LOGE(TAG, "Nao foi possivel abrir: %s", path);
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Arquivo nao encontrado");
         return ESP_FAIL;
@@ -112,9 +102,11 @@ static esp_err_t send_file(httpd_req_t *req, const char *path, const char *conte
 
     char chunk[1024];
     size_t read_bytes = 0;
-    while ((read_bytes = fread(chunk, 1, sizeof(chunk), file)) > 0) {
+    while ((read_bytes = fread(chunk, 1, sizeof(chunk), file)) > 0)
+    {
         esp_err_t err = httpd_resp_send_chunk(req, chunk, read_bytes);
-        if (err != ESP_OK) {
+        if (err != ESP_OK)
+        {
             fclose(file);
             httpd_resp_sendstr_chunk(req, NULL);
             return err;
@@ -144,9 +136,12 @@ static esp_err_t gifuct_get_handler(httpd_req_t *req)
     return send_file(req, "/spiffs/gifuct-js.min.js", "application/javascript");
 }
 
+/* =========================== Matrix WebSocket ========================= */
+
 static esp_err_t matrix_ws_handler(httpd_req_t *req)
 {
-    if (req->method == HTTP_GET) {
+    if (req->method == HTTP_GET)
+    {
         ESP_LOGI(TAG, "Cliente WebSocket conectado em /matrix");
         return ESP_OK;
     }
@@ -160,25 +155,29 @@ static esp_err_t matrix_ws_handler(httpd_req_t *req)
     };
 
     esp_err_t err = httpd_ws_recv_frame(req, &ws_pkt, 0);
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Falha ao ler tamanho do frame WS: %s", esp_err_to_name(err));
         return err;
     }
 
-    if (ws_pkt.len == 0 || ws_pkt.len > MAX_MATRIX_BODY_SIZE) {
+    if (ws_pkt.len == 0 || ws_pkt.len > MAX_MATRIX_BODY_SIZE)
+    {
         ESP_LOGE(TAG, "Frame WS invalido: %u bytes", (unsigned)ws_pkt.len);
         return ESP_FAIL;
     }
 
     uint8_t *payload = calloc(1, ws_pkt.len + 1);
-    if (!payload) {
+    if (!payload)
+    {
         ESP_LOGE(TAG, "Sem memoria para frame WS");
         return ESP_ERR_NO_MEM;
     }
 
     ws_pkt.payload = payload;
     err = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Falha ao ler frame WS: %s", esp_err_to_name(err));
         free(payload);
         return err;
@@ -199,19 +198,25 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     return send_file(req, "/spiffs/favicon.ico", "image/x-icon");
 }
 
+/* ============================ Wi-Fi / SPIFFS ========================== */
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    if (event_base != WIFI_EVENT) {
+    if (event_base != WIFI_EVENT)
+    {
         return;
     }
 
-    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+    if (event_id == WIFI_EVENT_AP_STACONNECTED)
+    {
         wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
         ESP_LOGI(TAG,
                  "Cliente conectado: %02x:%02x:%02x:%02x:%02x:%02x, AID=%d",
                  event->mac[0], event->mac[1], event->mac[2],
                  event->mac[3], event->mac[4], event->mac[5], event->aid);
-    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+    }
+    else if (event_id == WIFI_EVENT_AP_STADISCONNECTED)
+    {
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
         ESP_LOGI(TAG,
                  "Cliente desconectado: %02x:%02x:%02x:%02x:%02x:%02x, AID=%d",
@@ -241,18 +246,18 @@ static void init_wifi_softap(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    
+
     // Pega a referência para a interface de rede do AP
     esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
 
     // ---- MÁGICA DO WLED AQUI ----
     esp_netif_ip_info_t ip_info;
     esp_netif_dhcps_stop(ap_netif); // Pausa o DHCP
-    
+
     esp_netif_set_ip4_addr(&ip_info.ip, 4, 3, 2, 1);
     esp_netif_set_ip4_addr(&ip_info.gw, 4, 3, 2, 1);
     esp_netif_set_ip4_addr(&ip_info.netmask, 255, 255, 255, 0);
-    
+
     ESP_ERROR_CHECK(esp_netif_set_ip_info(ap_netif, &ip_info));
     esp_netif_dhcps_start(ap_netif); // Inicia o DHCP de volta com o IP novo
     // -----------------------------
@@ -281,7 +286,8 @@ static void init_wifi_softap(void)
         },
     };
 
-    if (strlen(WIFI_AP_PASS) == 0) {
+    if (strlen(WIFI_AP_PASS) == 0)
+    {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
@@ -295,6 +301,8 @@ static void init_wifi_softap(void)
     ESP_LOGI(TAG, "Abra no navegador: %s", PORTAL_URL);
 }
 
+/* ================================ DNS ================================= */
+
 static uint16_t dns_read_u16(const uint8_t *p)
 {
     return ((uint16_t)p[0] << 8) | p[1];
@@ -302,15 +310,19 @@ static uint16_t dns_read_u16(const uint8_t *p)
 
 static size_t dns_skip_name(const uint8_t *packet, size_t packet_len, size_t offset)
 {
-    while (offset < packet_len) {
+    while (offset < packet_len)
+    {
         uint8_t label_len = packet[offset];
 
-        if (label_len == 0) {
+        if (label_len == 0)
+        {
             return offset + 1;
         }
 
-        if ((label_len & 0xC0) == 0xC0) {
-            if (offset + 1 < packet_len) {
+        if ((label_len & 0xC0) == 0xC0)
+        {
+            if (offset + 1 < packet_len)
+            {
                 return offset + 2;
             }
             return 0;
@@ -325,7 +337,8 @@ static size_t dns_skip_name(const uint8_t *packet, size_t packet_len, size_t off
 static void dns_server_task(void *arg)
 {
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0) {
+    if (sock < 0)
+    {
         ESP_LOGE(TAG, "Falha ao criar socket DNS");
         vTaskDelete(NULL);
         return;
@@ -337,7 +350,8 @@ static void dns_server_task(void *arg)
         .sin_addr.s_addr = htonl(INADDR_ANY),
     };
 
-    if (bind(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+    {
         ESP_LOGE(TAG, "Falha no bind da porta 53");
         close(sock);
         vTaskDelete(NULL);
@@ -346,7 +360,8 @@ static void dns_server_task(void *arg)
 
     ESP_LOGI(TAG, "DNS captive iniciado na porta 53");
 
-    while (1) {
+    while (1)
+    {
         uint8_t rx[512];
         uint8_t response[512];
 
@@ -355,24 +370,28 @@ static void dns_server_task(void *arg)
 
         int len = recvfrom(sock, rx, sizeof(rx), 0,
                            (struct sockaddr *)&client_addr, &client_len);
-        if (len < 12) {
+        if (len < 12)
+        {
             continue;
         }
 
         uint16_t qdcount = dns_read_u16(&rx[4]);
-        if (qdcount != 1) {
+        if (qdcount != 1)
+        {
             continue;
         }
 
         size_t qname_end = dns_skip_name(rx, (size_t)len, 12);
-        if (qname_end == 0 || (qname_end + 4) > (size_t)len) {
+        if (qname_end == 0 || (qname_end + 4) > (size_t)len)
+        {
             continue;
         }
 
         uint16_t qtype = dns_read_u16(&rx[qname_end]);
         uint16_t qclass = dns_read_u16(&rx[qname_end + 2]);
 
-        if (qclass != 0x0001) {
+        if (qclass != 0x0001)
+        {
             continue;
         }
 
@@ -401,8 +420,10 @@ static void dns_server_task(void *arg)
 
         int resp_len = (int)question_len;
 
-        if (qtype == 0x0001) { // Tipo A
-            if ((resp_len + 16) > (int)sizeof(response)) {
+        if (qtype == 0x0001)
+        { // Tipo A
+            if ((resp_len + 16) > (int)sizeof(response))
+            {
                 continue;
             }
 
@@ -428,6 +449,8 @@ static void dns_server_task(void *arg)
                (struct sockaddr *)&client_addr, client_len);
     }
 }
+
+/* ============================ HTTP Server ============================= */
 
 static void register_captive_uri(httpd_handle_t server, const char *uri)
 {
@@ -535,10 +558,13 @@ static httpd_handle_t start_webserver(void)
     return server;
 }
 
+/* ============================== App Main ============================== */
+
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
