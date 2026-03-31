@@ -7,6 +7,7 @@
 #include "dns_task.h"
 #include "matrix_task.h"
 #include "webserver.h"
+#include "driver/rmt_tx.h"
 
 void app_main(void)
 {
