@@ -1,6 +1,11 @@
 const GRID_SIZE = 32;
 const OFF_COLOR = "#000000";
 
+const IMPORT_PREVIEW_SCALE = 12;
+const IMPORT_PREVIEW_SIZE = GRID_SIZE * IMPORT_PREVIEW_SCALE;
+const IMPORT_TRIM_ALPHA_THRESHOLD = 8;
+const IMPORT_CELL_ALPHA_THRESHOLD = 0.12;
+
 const canvas = document.getElementById("ledCanvas");
 const ctx = canvas.getContext("2d");
 
@@ -19,13 +24,34 @@ const modeButtons = document.querySelectorAll("[data-mode]");
 const swatchButtons = document.querySelectorAll(".inline-palette .color-swatch");
 const presetButtons = document.querySelectorAll(".preset-item");
 
+const mediaBtn = document.getElementById("mediaBtn");
+const mediaInput = document.getElementById("mediaInput");
+
+let activeVideoElement = null;
+let activeVideoUrl = null;
+let videoAnimationFrameId = null;
+let isStoppingVideoPlayback = false;
+let activeGifImage = null;
+let activeGifUrl = null;
+let gifAnimationFrameId = null;
+let activeGifState = null;
+let gifPlaybackTimer = null;
+
 let selectedColor = "#00eeff";
 let paintMode = "paint";
 let isDrawing = false;
 let lastPaintedCell = null;
 let rainbowPixelCounter = 0;
-const EASTER_EGG_COLOR = "#5c5d05"; // RGB(92, 93, 05)
 
+const EASTER_EGG_COLOR = "#060708"; 
+const GIF_EASTER_EGG_COLOR = "#5c5d05"; 
+
+const GIF_EASTER_EGG_PATHS = [
+  "./spfc.gif",
+  "spfc.gif",
+  "./Complemento/spfc.gif",
+  "/spfc.gif"
+];
 let frame = createEmptyFrame();
 
 function createEmptyFrame() {
@@ -137,6 +163,37 @@ function setPaintMode(mode) {
   updateToolbarUi();
 }
 
+async function triggerGifEasterEgg() {
+  stopActiveMediaPlayback();
+
+  let lastError = null;
+
+  for (const path of GIF_EASTER_EGG_PATHS) {
+    try {
+      const response = await fetch(path, { cache: "no-store" });
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} em ${path}`);
+      }
+
+      if (!contentType.includes("gif")) {
+        throw new Error(`Arquivo em ${path} não veio como GIF (${contentType || "sem content-type"})`);
+      }
+
+      const gifBlob = await response.blob();
+      await loadGifFileToFrame(gifBlob);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn("Falha ao tentar carregar easter egg GIF em:", path, error);
+    }
+  }
+
+  console.error("Nenhum caminho do easter egg GIF funcionou.", lastError);
+  alert("Não foi possível carregar o GIF do easter egg.");
+}
+
 function setSelectedColor(color) {
   selectedColor = color.toLowerCase();
   colorPicker.value = selectedColor;
@@ -145,6 +202,11 @@ function setSelectedColor(color) {
 
   if (selectedColor === EASTER_EGG_COLOR) {
     applyPreset("easteregg");
+    return;
+  }
+
+  if (selectedColor === GIF_EASTER_EGG_COLOR) {
+    triggerGifEasterEgg();
   }
 }
 
@@ -195,6 +257,451 @@ function hexToRgba(hex, alpha) {
   const b = parseInt(value.slice(4, 6), 16);
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function rgbToHex(r, g, b) {
+  return `#${[r, g, b]
+    .map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function createWorkCanvas(width, height) {
+  const workCanvas = document.createElement("canvas");
+  workCanvas.width = width;
+  workCanvas.height = height;
+  return workCanvas;
+}
+
+function getCanvas2dContext(targetCanvas) {
+  return targetCanvas.getContext("2d", { willReadFrequently: true });
+}
+
+function loadImageElementFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const imageUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    img.onload = () => {
+      URL.revokeObjectURL(imageUrl);
+      resolve(img);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(imageUrl);
+      reject(new Error("Não foi possível decodificar a imagem."));
+    };
+
+    img.decoding = "async";
+    img.src = imageUrl;
+  });
+}
+
+function findVisibleBounds(imageData, width, height, alphaThreshold = IMPORT_TRIM_ALPHA_THRESHOLD) {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = (y * width + x) * 4;
+      const alpha = imageData[index + 3];
+
+      if (alpha > alphaThreshold) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX === -1 || maxY === -1) {
+    return {
+      x: 0,
+      y: 0,
+      width,
+      height,
+    };
+  }
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+  };
+}
+
+function buildImportPreviewCanvas(img) {
+  const sourceWidth = img.videoWidth || img.naturalWidth || img.width;
+  const sourceHeight = img.videoHeight || img.naturalHeight || img.height;
+
+  const sourceCanvas = createWorkCanvas(sourceWidth, sourceHeight);
+  const sourceCtx = getCanvas2dContext(sourceCanvas);
+
+  sourceCtx.clearRect(0, 0, sourceWidth, sourceHeight);
+  sourceCtx.drawImage(img, 0, 0, sourceWidth, sourceHeight);
+
+  const sourceImageData = sourceCtx.getImageData(0, 0, sourceWidth, sourceHeight);
+  const visibleBounds = findVisibleBounds(
+    sourceImageData.data,
+    sourceWidth,
+    sourceHeight
+  );
+
+  const previewCanvas = createWorkCanvas(IMPORT_PREVIEW_SIZE, IMPORT_PREVIEW_SIZE);
+  const previewCtx = getCanvas2dContext(previewCanvas);
+
+  previewCtx.clearRect(0, 0, IMPORT_PREVIEW_SIZE, IMPORT_PREVIEW_SIZE);
+  previewCtx.imageSmoothingEnabled = true;
+  previewCtx.imageSmoothingQuality = "high";
+
+  const scale = Math.min(
+    IMPORT_PREVIEW_SIZE / visibleBounds.width,
+    IMPORT_PREVIEW_SIZE / visibleBounds.height
+  );
+
+  const drawWidth = Math.max(1, Math.round(visibleBounds.width * scale));
+  const drawHeight = Math.max(1, Math.round(visibleBounds.height * scale));
+
+  const offsetX = Math.floor((IMPORT_PREVIEW_SIZE - drawWidth) / 2);
+  const offsetY = Math.floor((IMPORT_PREVIEW_SIZE - drawHeight) / 2);
+
+  previewCtx.drawImage(
+    sourceCanvas,
+    visibleBounds.x,
+    visibleBounds.y,
+    visibleBounds.width,
+    visibleBounds.height,
+    offsetX,
+    offsetY,
+    drawWidth,
+    drawHeight
+  );
+
+  return previewCanvas;
+}
+
+function samplePreviewCanvasToFrame(previewCanvas) {
+  const previewCtx = getCanvas2dContext(previewCanvas);
+  const { width, height } = previewCanvas;
+  const pixels = previewCtx.getImageData(0, 0, width, height).data;
+
+  const blockWidth = width / GRID_SIZE;
+  const blockHeight = height / GRID_SIZE;
+
+  const newFrame = createEmptyFrame();
+
+  for (let gridY = 0; gridY < GRID_SIZE; gridY++) {
+    for (let gridX = 0; gridX < GRID_SIZE; gridX++) {
+      const startX = Math.floor(gridX * blockWidth);
+      const endX = Math.max(startX + 1, Math.floor((gridX + 1) * blockWidth));
+      const startY = Math.floor(gridY * blockHeight);
+      const endY = Math.max(startY + 1, Math.floor((gridY + 1) * blockHeight));
+
+      let weightedR = 0;
+      let weightedG = 0;
+      let weightedB = 0;
+      let alphaWeightSum = 0;
+      let alphaCoverage = 0;
+
+      const totalSamples = (endX - startX) * (endY - startY);
+
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const index = (y * width + x) * 4;
+          const r = pixels[index];
+          const g = pixels[index + 1];
+          const b = pixels[index + 2];
+          const a = pixels[index + 3] / 255;
+
+          alphaCoverage += a;
+
+          if (a <= 0) continue;
+
+          weightedR += r * a;
+          weightedG += g * a;
+          weightedB += b * a;
+          alphaWeightSum += a;
+        }
+      }
+
+      const coverageRatio = totalSamples > 0 ? alphaCoverage / totalSamples : 0;
+
+      if (alphaWeightSum <= 0 || coverageRatio < IMPORT_CELL_ALPHA_THRESHOLD) {
+        newFrame[gridY][gridX] = OFF_COLOR;
+        continue;
+      }
+
+      const finalR = Math.round(weightedR / alphaWeightSum);
+      const finalG = Math.round(weightedG / alphaWeightSum);
+      const finalB = Math.round(weightedB / alphaWeightSum);
+
+      newFrame[gridY][gridX] = rgbToHex(finalR, finalG, finalB);
+    }
+  }
+
+  return newFrame;
+}
+
+async function loadImageFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  try {
+    const img = await loadImageElementFromFile(file);
+    const previewCanvas = buildImportPreviewCanvas(img);
+    const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+    frame = convertedFrame;
+    render();
+    scheduleConsoleExport();
+  } catch (error) {
+    console.error(error);
+    alert("Não foi possível carregar a imagem selecionada.");
+  }
+}
+
+function stopActiveMediaPlayback() {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+}
+
+function stopActiveGifPlayback() {
+  if (gifPlaybackTimer !== null) {
+    clearTimeout(gifPlaybackTimer);
+    gifPlaybackTimer = null;
+  }
+
+  if (gifAnimationFrameId !== null) {
+    cancelAnimationFrame(gifAnimationFrameId);
+    gifAnimationFrameId = null;
+  }
+
+  if (activeGifUrl) {
+    URL.revokeObjectURL(activeGifUrl);
+    activeGifUrl = null;
+  }
+
+  activeGifImage = null;
+  activeGifState = null;
+}
+
+async function loadImageFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  try {
+    const img = await loadImageElementFromFile(file);
+    const previewCanvas = buildImportPreviewCanvas(img);
+    const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+    frame = convertedFrame;
+    render();
+    scheduleConsoleExport();
+  } catch (error) {
+    console.error(error);
+    alert("Não foi possível carregar a imagem selecionada.");
+  }
+}
+
+async function decodeGifFrames(file) {
+  if (typeof window.GIF !== "function") {
+    throw new Error("A biblioteca gifuct-js não foi carregada corretamente.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const gif = new window.GIF(buffer);
+  const rawFrames = gif.decompressFrames(true);
+
+  const gifWidth = gif.raw.lsd.width;
+  const gifHeight = gif.raw.lsd.height;
+
+  const workCanvas = createWorkCanvas(gifWidth, gifHeight);
+  const workCtx = getCanvas2dContext(workCanvas);
+  workCtx.clearRect(0, 0, gifWidth, gifHeight);
+
+  const decodedFrames = [];
+
+  for (const rawFrame of rawFrames) {
+    let previousSnapshot = null;
+
+    if (rawFrame.disposalType === 3) {
+      previousSnapshot = workCtx.getImageData(0, 0, gifWidth, gifHeight);
+    }
+
+    const patchImageData = workCtx.createImageData(
+      rawFrame.dims.width,
+      rawFrame.dims.height
+    );
+    patchImageData.data.set(rawFrame.patch);
+
+    workCtx.putImageData(
+      patchImageData,
+      rawFrame.dims.left,
+      rawFrame.dims.top
+    );
+
+    const frameCanvas = createWorkCanvas(gifWidth, gifHeight);
+    const frameCtx = getCanvas2dContext(frameCanvas);
+    frameCtx.clearRect(0, 0, gifWidth, gifHeight);
+    frameCtx.drawImage(workCanvas, 0, 0);
+
+    decodedFrames.push({
+      canvas: frameCanvas,
+      delayMs: Math.max(20, rawFrame.delay || 100),
+    });
+
+    if (rawFrame.disposalType === 2) {
+      workCtx.clearRect(
+        rawFrame.dims.left,
+        rawFrame.dims.top,
+        rawFrame.dims.width,
+        rawFrame.dims.height
+      );
+    } else if (rawFrame.disposalType === 3 && previousSnapshot) {
+      workCtx.putImageData(previousSnapshot, 0, 0);
+    }
+  }
+
+  return decodedFrames;
+}
+
+function stopActiveVideoPlayback() {
+  isStoppingVideoPlayback = true;
+
+  if (videoAnimationFrameId !== null) {
+    cancelAnimationFrame(videoAnimationFrameId);
+    videoAnimationFrameId = null;
+  }
+
+  if (activeVideoElement) {
+    activeVideoElement.pause();
+
+    activeVideoElement.onloadedmetadata = null;
+    activeVideoElement.onerror = null;
+
+    activeVideoElement.removeAttribute("src");
+    activeVideoElement.load();
+
+    activeVideoElement = null;
+  }
+
+  if (activeVideoUrl) {
+    URL.revokeObjectURL(activeVideoUrl);
+    activeVideoUrl = null;
+  }
+
+  isStoppingVideoPlayback = false;
+}
+
+
+
+function renderGifCanvasFrame(frameCanvas) {
+  const previewCanvas = buildImportPreviewCanvas(frameCanvas);
+  const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+  frame = convertedFrame;
+  render();
+  scheduleConsoleExport();
+}
+
+function playNextGifFrame() {
+  if (!activeGifState || activeGifState.frames.length === 0) return;
+
+  const currentFrame = activeGifState.frames[activeGifState.frameIndex];
+
+  renderGifCanvasFrame(currentFrame.canvas);
+
+  activeGifState.frameIndex =
+    (activeGifState.frameIndex + 1) % activeGifState.frames.length;
+
+  gifPlaybackTimer = setTimeout(playNextGifFrame, currentFrame.delayMs);
+}
+
+async function loadGifFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  try {
+    const decodedFrames = await decodeGifFrames(file);
+
+    if (!decodedFrames.length) {
+      throw new Error("GIF sem frames válidos.");
+    }
+
+    activeGifState = {
+      frames: decodedFrames,
+      frameIndex: 0,
+    };
+
+    playNextGifFrame();
+    } catch (error) {
+    console.error(error);
+    stopActiveGifPlayback();
+    alert(error.message || "Não foi possível carregar o GIF selecionado.");
+  }
+}
+
+function renderVideoFrameToFrame(video) {
+  const previewCanvas = buildImportPreviewCanvas(video);
+  const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+  frame = convertedFrame;
+  render();
+  scheduleConsoleExport();
+}
+
+function animateVideoToLedFrame() {
+  if (!activeVideoElement) return;
+
+  if (
+    activeVideoElement.readyState >= 2 &&
+    !activeVideoElement.paused &&
+    !activeVideoElement.ended
+  ) {
+    renderVideoFrameToFrame(activeVideoElement);
+  }
+
+  videoAnimationFrameId = requestAnimationFrame(animateVideoToLedFrame);
+}
+
+function loadVideoFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  const videoUrl = URL.createObjectURL(file);
+  const video = document.createElement("video");
+
+  activeVideoElement = video;
+  activeVideoUrl = videoUrl;
+
+  video.src = videoUrl;
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.autoplay = true;
+  video.preload = "auto";
+
+  video.onloadedmetadata = async () => {
+    try {
+      await video.play();
+      animateVideoToLedFrame();
+    } catch (error) {
+      console.error(error);
+      if (!isStoppingVideoPlayback) {
+        alert("Não foi possível iniciar o vídeo automaticamente.");
+      }
+    }
+  };
+
+  video.onerror = () => {
+    if (isStoppingVideoPlayback) return;
+
+    stopActiveVideoPlayback();
+    alert("Não foi possível carregar o vídeo selecionado.");
+  };
 }
 
 function isOffCell(color) {
@@ -341,6 +848,8 @@ function processPointerEvent(event) {
 }
 
 function clearFrame() {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
   frame = createEmptyFrame();
   render();
   scheduleConsoleExport();
@@ -420,6 +929,8 @@ function applyPresetHoverColors() {
 }
 
 function applyPreset(name) {
+  stopActiveMediaPlayback();
+
   const newFrame = getPresetFrameByName(name);
 
   frame = cloneFrame(newFrame);
@@ -869,6 +1380,8 @@ function stopDrawing(event) {
 canvas.addEventListener("pointerdown", (event) => {
   event.preventDefault();
 
+  stopActiveMediaPlayback();
+
   isDrawing = true;
   lastPaintedCell = null;
 
@@ -899,6 +1412,7 @@ canvas.addEventListener("pointercancel", (event) => {
 
 canvas.addEventListener("click", (event) => {
   event.preventDefault();
+  stopActiveMediaPlayback();
   drawFromEvent(event);
   render();
 });
@@ -910,6 +1424,32 @@ canvas.addEventListener("lostpointercapture", () => {
 
 clearBtn.addEventListener("click", clearFrame);
 presetBtn.addEventListener("click", () => openModal(presetModal));
+
+mediaBtn.addEventListener("click", () => {
+  mediaInput.click();
+});
+
+mediaInput.addEventListener("change", (event) => {
+  const file = event.target.files?.[0];
+
+  if (!file) return;
+
+  const isGif =
+    file.type === "image/gif" ||
+    /\.gif$/i.test(file.name);
+
+  if (isGif) {
+    loadGifFileToFrame(file);
+  } else if (file.type.startsWith("image/")) {
+    loadImageFileToFrame(file);
+  } else if (file.type.startsWith("video/")) {
+    loadVideoFileToFrame(file);
+  } else {
+    alert("Arquivo inválido.");
+  }
+
+  mediaInput.value = "";
+});
 
 toggleColorsBtn.addEventListener("click", () => {
   const isHiddenNow = paintToolbar.classList.toggle("is-hidden");

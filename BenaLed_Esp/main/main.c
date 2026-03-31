@@ -32,6 +32,7 @@ static esp_err_t captive_redirect_head_handler(httpd_req_t *req);
 static esp_err_t index_get_handler(httpd_req_t *req);
 static esp_err_t css_get_handler(httpd_req_t *req);
 static esp_err_t js_get_handler(httpd_req_t *req);
+static esp_err_t gifuct_get_handler(httpd_req_t *req);
 static esp_err_t matrix_post_handler(httpd_req_t *req);
 static esp_err_t favicon_get_handler(httpd_req_t *req);
 
@@ -137,6 +138,10 @@ static esp_err_t css_get_handler(httpd_req_t *req)
 static esp_err_t js_get_handler(httpd_req_t *req)
 {
     return send_file(req, "/spiffs/app.js", "application/javascript");
+}
+static esp_err_t gifuct_get_handler(httpd_req_t *req)
+{
+    return send_file(req, "/spiffs/gifuct-js.min.js", "application/javascript");
 }
 
 static esp_err_t matrix_post_handler(httpd_req_t *req)
@@ -475,6 +480,13 @@ static httpd_handle_t start_webserver(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t gifuct_uri = {
+        .uri = "/gifuct-js.min.js",
+        .method = HTTP_GET,
+        .handler = gifuct_get_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t matrix_uri = {
         .uri = "/matrix",
         .method = HTTP_POST,
@@ -493,6 +505,7 @@ static httpd_handle_t start_webserver(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_html_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &css_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &js_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &gifuct_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &matrix_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &favicon_uri));
 

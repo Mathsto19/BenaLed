@@ -27,12 +27,31 @@ const presetButtons = document.querySelectorAll(".preset-item");
 const mediaBtn = document.getElementById("mediaBtn");
 const mediaInput = document.getElementById("mediaInput");
 
+let activeVideoElement = null;
+let activeVideoUrl = null;
+let videoAnimationFrameId = null;
+let isStoppingVideoPlayback = false;
+let activeGifImage = null;
+let activeGifUrl = null;
+let gifAnimationFrameId = null;
+let activeGifState = null;
+let gifPlaybackTimer = null;
+
 let selectedColor = "#00eeff";
 let paintMode = "paint";
 let isDrawing = false;
 let lastPaintedCell = null;
 let rainbowPixelCounter = 0;
-const EASTER_EGG_COLOR = "#5c5d05"; // RGB(92, 93, 05)
+
+const EASTER_EGG_COLOR = "#060708"; 
+const GIF_EASTER_EGG_COLOR = "#5c5d05"; 
+
+const GIF_EASTER_EGG_PATHS = [
+  "./spfc.gif",
+  "spfc.gif",
+  "./Complemento/spfc.gif",
+  "/spfc.gif"
+];
 
 let frame = createEmptyFrame();
 
@@ -145,6 +164,37 @@ function setPaintMode(mode) {
   updateToolbarUi();
 }
 
+async function triggerGifEasterEgg() {
+  stopActiveMediaPlayback();
+
+  let lastError = null;
+
+  for (const path of GIF_EASTER_EGG_PATHS) {
+    try {
+      const response = await fetch(path, { cache: "no-store" });
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} em ${path}`);
+      }
+
+      if (!contentType.includes("gif")) {
+        throw new Error(`Arquivo em ${path} não veio como GIF (${contentType || "sem content-type"})`);
+      }
+
+      const gifBlob = await response.blob();
+      await loadGifFileToFrame(gifBlob);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn("Falha ao tentar carregar easter egg GIF em:", path, error);
+    }
+  }
+
+  console.error("Nenhum caminho do easter egg GIF funcionou.", lastError);
+  alert("Não foi possível carregar o GIF do easter egg.");
+}
+
 function setSelectedColor(color) {
   selectedColor = color.toLowerCase();
   colorPicker.value = selectedColor;
@@ -153,6 +203,11 @@ function setSelectedColor(color) {
 
   if (selectedColor === EASTER_EGG_COLOR) {
     applyPreset("easteregg");
+    return;
+  }
+
+  if (selectedColor === GIF_EASTER_EGG_COLOR) {
+    triggerGifEasterEgg();
   }
 }
 
@@ -280,8 +335,8 @@ function findVisibleBounds(imageData, width, height, alphaThreshold = IMPORT_TRI
 }
 
 function buildImportPreviewCanvas(img) {
-  const sourceWidth = img.naturalWidth || img.width;
-  const sourceHeight = img.naturalHeight || img.height;
+  const sourceWidth = img.videoWidth || img.naturalWidth || img.width;
+  const sourceHeight = img.videoHeight || img.naturalHeight || img.height;
 
   const sourceCanvas = createWorkCanvas(sourceWidth, sourceHeight);
   const sourceCtx = getCanvas2dContext(sourceCanvas);
@@ -392,6 +447,9 @@ function samplePreviewCanvasToFrame(previewCanvas) {
 }
 
 async function loadImageFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
   try {
     const img = await loadImageElementFromFile(file);
     const previewCanvas = buildImportPreviewCanvas(img);
@@ -404,6 +462,247 @@ async function loadImageFileToFrame(file) {
     console.error(error);
     alert("Não foi possível carregar a imagem selecionada.");
   }
+}
+
+function stopActiveMediaPlayback() {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+}
+
+function stopActiveGifPlayback() {
+  if (gifPlaybackTimer !== null) {
+    clearTimeout(gifPlaybackTimer);
+    gifPlaybackTimer = null;
+  }
+
+  if (gifAnimationFrameId !== null) {
+    cancelAnimationFrame(gifAnimationFrameId);
+    gifAnimationFrameId = null;
+  }
+
+  if (activeGifUrl) {
+    URL.revokeObjectURL(activeGifUrl);
+    activeGifUrl = null;
+  }
+
+  activeGifImage = null;
+  activeGifState = null;
+}
+
+async function loadImageFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  try {
+    const img = await loadImageElementFromFile(file);
+    const previewCanvas = buildImportPreviewCanvas(img);
+    const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+    frame = convertedFrame;
+    render();
+    scheduleConsoleExport();
+  } catch (error) {
+    console.error(error);
+    alert("Não foi possível carregar a imagem selecionada.");
+  }
+}
+
+async function decodeGifFrames(file) {
+  if (typeof window.GIF !== "function") {
+    throw new Error("A biblioteca gifuct-js não foi carregada corretamente.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const gif = new window.GIF(buffer);
+  const rawFrames = gif.decompressFrames(true);
+
+  const gifWidth = gif.raw.lsd.width;
+  const gifHeight = gif.raw.lsd.height;
+
+  const workCanvas = createWorkCanvas(gifWidth, gifHeight);
+  const workCtx = getCanvas2dContext(workCanvas);
+  workCtx.clearRect(0, 0, gifWidth, gifHeight);
+
+  const decodedFrames = [];
+
+  for (const rawFrame of rawFrames) {
+    let previousSnapshot = null;
+
+    if (rawFrame.disposalType === 3) {
+      previousSnapshot = workCtx.getImageData(0, 0, gifWidth, gifHeight);
+    }
+
+    const patchImageData = workCtx.createImageData(
+      rawFrame.dims.width,
+      rawFrame.dims.height
+    );
+    patchImageData.data.set(rawFrame.patch);
+
+    workCtx.putImageData(
+      patchImageData,
+      rawFrame.dims.left,
+      rawFrame.dims.top
+    );
+
+    const frameCanvas = createWorkCanvas(gifWidth, gifHeight);
+    const frameCtx = getCanvas2dContext(frameCanvas);
+    frameCtx.clearRect(0, 0, gifWidth, gifHeight);
+    frameCtx.drawImage(workCanvas, 0, 0);
+
+    decodedFrames.push({
+      canvas: frameCanvas,
+      delayMs: Math.max(20, rawFrame.delay || 100),
+    });
+
+    if (rawFrame.disposalType === 2) {
+      workCtx.clearRect(
+        rawFrame.dims.left,
+        rawFrame.dims.top,
+        rawFrame.dims.width,
+        rawFrame.dims.height
+      );
+    } else if (rawFrame.disposalType === 3 && previousSnapshot) {
+      workCtx.putImageData(previousSnapshot, 0, 0);
+    }
+  }
+
+  return decodedFrames;
+}
+
+function stopActiveVideoPlayback() {
+  isStoppingVideoPlayback = true;
+
+  if (videoAnimationFrameId !== null) {
+    cancelAnimationFrame(videoAnimationFrameId);
+    videoAnimationFrameId = null;
+  }
+
+  if (activeVideoElement) {
+    activeVideoElement.pause();
+
+    activeVideoElement.onloadedmetadata = null;
+    activeVideoElement.onerror = null;
+
+    activeVideoElement.removeAttribute("src");
+    activeVideoElement.load();
+
+    activeVideoElement = null;
+  }
+
+  if (activeVideoUrl) {
+    URL.revokeObjectURL(activeVideoUrl);
+    activeVideoUrl = null;
+  }
+
+  isStoppingVideoPlayback = false;
+}
+
+
+
+function renderGifCanvasFrame(frameCanvas) {
+  const previewCanvas = buildImportPreviewCanvas(frameCanvas);
+  const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+  frame = convertedFrame;
+  render();
+  scheduleConsoleExport();
+}
+
+function playNextGifFrame() {
+  if (!activeGifState || activeGifState.frames.length === 0) return;
+
+  const currentFrame = activeGifState.frames[activeGifState.frameIndex];
+
+  renderGifCanvasFrame(currentFrame.canvas);
+
+  activeGifState.frameIndex =
+    (activeGifState.frameIndex + 1) % activeGifState.frames.length;
+
+  gifPlaybackTimer = setTimeout(playNextGifFrame, currentFrame.delayMs);
+}
+
+async function loadGifFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  try {
+    const decodedFrames = await decodeGifFrames(file);
+
+    if (!decodedFrames.length) {
+      throw new Error("GIF sem frames válidos.");
+    }
+
+    activeGifState = {
+      frames: decodedFrames,
+      frameIndex: 0,
+    };
+
+    playNextGifFrame();
+    } catch (error) {
+    console.error(error);
+    stopActiveGifPlayback();
+    alert(error.message || "Não foi possível carregar o GIF selecionado.");
+  }
+}
+
+function renderVideoFrameToFrame(video) {
+  const previewCanvas = buildImportPreviewCanvas(video);
+  const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
+
+  frame = convertedFrame;
+  render();
+  scheduleConsoleExport();
+}
+
+function animateVideoToLedFrame() {
+  if (!activeVideoElement) return;
+
+  if (
+    activeVideoElement.readyState >= 2 &&
+    !activeVideoElement.paused &&
+    !activeVideoElement.ended
+  ) {
+    renderVideoFrameToFrame(activeVideoElement);
+  }
+
+  videoAnimationFrameId = requestAnimationFrame(animateVideoToLedFrame);
+}
+
+function loadVideoFileToFrame(file) {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
+
+  const videoUrl = URL.createObjectURL(file);
+  const video = document.createElement("video");
+
+  activeVideoElement = video;
+  activeVideoUrl = videoUrl;
+
+  video.src = videoUrl;
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.autoplay = true;
+  video.preload = "auto";
+
+  video.onloadedmetadata = async () => {
+    try {
+      await video.play();
+      animateVideoToLedFrame();
+    } catch (error) {
+      console.error(error);
+      if (!isStoppingVideoPlayback) {
+        alert("Não foi possível iniciar o vídeo automaticamente.");
+      }
+    }
+  };
+
+  video.onerror = () => {
+    if (isStoppingVideoPlayback) return;
+
+    stopActiveVideoPlayback();
+    alert("Não foi possível carregar o vídeo selecionado.");
+  };
 }
 
 function isOffCell(color) {
@@ -550,6 +849,8 @@ function processPointerEvent(event) {
 }
 
 function clearFrame() {
+  stopActiveVideoPlayback();
+  stopActiveGifPlayback();
   frame = createEmptyFrame();
   render();
   scheduleConsoleExport();
@@ -629,6 +930,8 @@ function applyPresetHoverColors() {
 }
 
 function applyPreset(name) {
+  stopActiveMediaPlayback();
+
   const newFrame = getPresetFrameByName(name);
 
   frame = cloneFrame(newFrame);
@@ -1078,6 +1381,8 @@ function stopDrawing(event) {
 canvas.addEventListener("pointerdown", (event) => {
   event.preventDefault();
 
+  stopActiveMediaPlayback();
+
   isDrawing = true;
   lastPaintedCell = null;
 
@@ -1108,6 +1413,7 @@ canvas.addEventListener("pointercancel", (event) => {
 
 canvas.addEventListener("click", (event) => {
   event.preventDefault();
+  stopActiveMediaPlayback();
   drawFromEvent(event);
   render();
 });
@@ -1129,10 +1435,16 @@ mediaInput.addEventListener("change", (event) => {
 
   if (!file) return;
 
-  if (file.type.startsWith("image/")) {
+  const isGif =
+    file.type === "image/gif" ||
+    /\.gif$/i.test(file.name);
+
+  if (isGif) {
+    loadGifFileToFrame(file);
+  } else if (file.type.startsWith("image/")) {
     loadImageFileToFrame(file);
   } else if (file.type.startsWith("video/")) {
-    alert("Vídeo ainda não foi implementado. Por enquanto, selecione uma imagem.");
+    loadVideoFileToFrame(file);
   } else {
     alert("Arquivo inválido.");
   }

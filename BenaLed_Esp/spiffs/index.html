@@ -6,7 +6,7 @@
   <title>BenaLed</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon" />
   <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <div class="bg-orb bg-orb-1"></div>
@@ -69,8 +69,16 @@
       <div class="controls">
         <button id="toggleColorsBtn" class="btn btn-colors">Cores</button>
         <button id="presetBtn" class="btn btn-presets">Modelos</button>
+        <button id="mediaBtn" class="btn btn-media">Foto/Vídeo</button>
         <button id="clearBtn" class="btn btn-danger">Limpar tela</button>
       </div>
+
+      <input
+        id="mediaInput"
+        type="file"
+        accept="image/*,video/*"
+        hidden
+      />
     </main>
 
   <div id="presetModal" class="modal hidden">
@@ -93,6 +101,8 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="/gifuct-js.min.js"></script>
+  <script src="/app.js"></script>
+
 </body>
 </html>
