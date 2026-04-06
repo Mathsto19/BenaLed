@@ -1,0 +1,1379 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #07111f;
+  --bg-2: #0d1728;
+  --bg-3: #101d33;
+  --card: rgba(10, 16, 29, 0.82);
+  --card-border: rgba(126, 146, 179, 0.22);
+  --card-highlight: rgba(255, 255, 255, 0.08);
+  --text: #f6f8fb;
+  --muted: #9aa8bf;
+  --accent: #00e5ff;
+  --accent-2: #59f2d7;
+  --danger: #ff5d73;
+  --ui-font: "Segoe UI", "Inter", Arial, sans-serif;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--ui-font);
+  color: var(--text);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(0, 229, 255, 0.08), transparent 28%),
+    radial-gradient(circle at 20% 80%, rgba(0, 153, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 45%, var(--bg-3) 100%);
+  overflow-x: hidden;
+  position: relative;
+}
+
+.bg-orb {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(90px);
+  pointer-events: none;
+  opacity: 0.35;
+  z-index: 0;
+}
+
+.bg-orb-1 {
+  width: 220px;
+  height: 220px;
+  top: 70px;
+  left: 8%;
+  background: rgba(0, 229, 255, 0.18);
+}
+
+.bg-orb-2 {
+  width: 260px;
+  height: 260px;
+  right: 10%;
+  bottom: 80px;
+  background: rgba(97, 66, 255, 0.16);
+}
+
+.app {
+  position: relative;
+  z-index: 1;
+  max-width: 920px;
+  margin: 0 auto;
+  /* Base: espaco do topo da tela ate o BenaLed */
+  padding: 12px 18px 14px;
+}
+
+.topbar {
+  /* Base: se houver conteudo na barra superior, esse valor aumenta o espaco antes do BenaLed */
+  margin-bottom: 10px;
+}
+
+.welcome-header {
+  text-align: center;
+  /* Base: espaco entre BenaLed e card */
+  margin-bottom: 10px;
+  /* Base: ajuste acima do BenaLed dentro do proprio header */
+  padding-top: 0;
+}
+
+.welcome-title {
+  position: relative;
+  display: inline-block;
+  margin: 0;
+  font-family: "Arial Narrow", "Bahnschrift SemiCondensed", Arial, sans-serif;
+  /* Base: tamanho da fonte do BenaLed */
+  font-size: clamp(58px, 5vw, 84px);
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -1px;
+  text-align: center;
+  isolation: isolate;
+}
+
+.welcome-title span {
+  position: relative;
+  z-index: 3;
+  color: #000000;
+  font-weight: 600;
+}
+
+.welcome-title::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  color: transparent;
+  pointer-events: none;
+  text-shadow:
+    -2px 0 0 #ff004c,
+     2px 0 0 #ff7a00,
+     0 -2px 0 #00e5ff,
+     0 2px 0 #8a2eff,
+    -2px -2px 0 #ff004c,
+     2px -2px 0 #ff7a00,
+    -2px 2px 0 #00e5ff,
+     2px 2px 0 #8a2eff;
+  animation: rainbowBorder 4s linear infinite;
+}
+
+.welcome-title::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  color: transparent;
+  pointer-events: none;
+  opacity: 0.75;
+  text-shadow:
+    0 0 4px #ff004c,
+    0 0 6px #ff7a00,
+    0 0 8px #00e5ff,
+    0 0 10px #8a2eff;
+  filter: blur(1.5px);
+  animation: rainbowBorder 4s linear infinite;
+}
+
+.card {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+    var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 28px;
+  padding: 18px;
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 var(--card-highlight);
+  backdrop-filter: blur(14px);
+}
+
+.canvas-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.canvas-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.canvas-subtitle {
+  margin: 0;
+  font-size: 0.98rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.panel-chip {
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 255, 0.18);
+  background: rgba(0, 229, 255, 0.08);
+  color: #dffcff;
+  font-size: 0.93rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.current-color-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.current-color-label {
+  color: #f3f7fb;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.current-color-preview {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #00eeff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.current-color-box:hover .current-color-preview {
+  transform: scale(1.04);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 16px rgba(255, 255, 255, 0.12);
+}
+
+.canvas-shell {
+  padding: 10px;
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01)),
+    rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -8px 20px rgba(0, 0, 0, 0.25);
+}
+
+.paint-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tool-btn {
+  min-height: 42px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
+  color: #f6f8fb;
+  font-family: var(--ui-font);
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.tool-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 229, 255, 0.26);
+}
+
+.tool-btn.is-active {
+  border-color: rgba(0, 229, 255, 0.34);
+  background:
+    linear-gradient(180deg, rgba(0, 229, 255, 0.14), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.12);
+}
+
+.rainbow-tool.is-active {
+  border-color: rgba(255, 255, 255, 0.28);
+  background:
+    linear-gradient(90deg,
+      rgba(255, 59, 48, 0.18),
+      rgba(255, 149, 0, 0.18),
+      rgba(255, 214, 10, 0.18),
+      rgba(52, 199, 89, 0.18),
+      rgba(10, 132, 255, 0.18),
+      rgba(191, 90, 242, 0.18));
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.08);
+}
+
+.inline-palette {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inline-palette .color-swatch {
+  width: 34px;
+  height: 34px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 8px 16px rgba(0, 0, 0, 0.16);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.inline-palette .color-swatch:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.inline-palette .color-swatch.is-selected {
+  border-color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 0 0 4px rgba(0, 229, 255, 0.14),
+    0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.inline-palette .color-swatch:focus {
+  outline: none;
+}
+
+.inline-palette .color-swatch:focus-visible {
+  box-shadow:
+    0 0 0 4px rgba(0, 229, 255, 0.2),
+    0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.color-wheel-picker {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 3px;
+  background:
+    conic-gradient(
+      #ff3b30,
+      #ff9500,
+      #ffd60a,
+      #34c759,
+      #00c7be,
+      #0a84ff,
+      #5e5ce6,
+      #bf5af2,
+      #ff2d55,
+      #ff3b30
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 10px 18px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.color-wheel-picker input[type="color"] {
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.color-wheel-picker input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-wheel-picker input[type="color"]::-webkit-color-swatch {
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+}
+
+.color-wheel-picker input[type="color"]::-moz-color-swatch {
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
+}
+
+/* Celular */
+/* Celular */
+@media (max-width: 740px) {
+  .paint-toolbar {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .color-wheel-picker {
+    width: 42px;
+    height: 42px;
+  }
+}
+
+.canvas-wrapper {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0f1622 0%, #090d14 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 10px 28px rgba(255, 255, 255, 0.02),
+    inset 0 -14px 24px rgba(0, 0, 0, 0.45);
+}
+
+#ledCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+  background: transparent;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.btn {
+  min-height: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
+  color: #f6f8fb;
+  padding: 12px 14px;
+  font-family: var(--ui-font);
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 229, 255, 0.28);
+  background:
+    linear-gradient(180deg, rgba(0, 229, 255, 0.12), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.btn-colors:hover {
+  border-color: rgba(0, 229, 255, 0.30);
+  background:
+    linear-gradient(180deg, rgba(0, 229, 255, 0.14), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.btn-presets:hover {
+  border-color: rgba(168, 85, 247, 0.34);
+  background:
+    linear-gradient(180deg, rgba(168, 85, 247, 0.16), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.btn:active {
+  transform: scale(0.985);
+}
+
+.btn-primary {
+  border-color: rgba(0, 229, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 28px rgba(0, 229, 255, 0.12);
+}
+
+.btn-danger:hover {
+  border-color: rgba(255, 93, 115, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 93, 115, 0.14), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 15, 0.72);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 1000;
+}
+
+.hidden {
+  display: none;
+}
+
+.modal-content {
+  width: min(560px, 100%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+    #0d1523;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow:
+    0 28px 60px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.close-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.close-btn:hover {
+  transform: scale(1.04);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.color-swatch {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 10px 18px rgba(0, 0, 0, 0.16);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.color-swatch:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.custom-color {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #f5f8fb;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.preset-item {
+  --preset-glow: #00e5ff;
+  --preset-glow-soft: rgba(0, 229, 255, 0.14);
+  --preset-glow-border: rgba(0, 229, 255, 0.28);
+  --preset-glow-shadow: rgba(0, 229, 255, 0.18);
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+  border-radius: 18px;
+  padding: 18px 14px;
+  font-family: var(--ui-font);
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+  .preset-item:hover {
+    transform: translateY(-1px);
+    border-color: var(--preset-glow-border);
+    background:
+      linear-gradient(180deg, var(--preset-glow-soft), rgba(255, 255, 255, 0.03)),
+      rgba(255, 255, 255, 0.04);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 0 22px var(--preset-glow-shadow);
+  }
+
+    .btn-media:hover {
+    border-color: rgba(255, 193, 7, 0.34);
+    background:
+      linear-gradient(180deg, rgba(255, 193, 7, 0.14), rgba(255, 255, 255, 0.03)),
+      rgba(255, 255, 255, 0.05);
+  }
+
+  .btn-media:hover {
+    border-color: rgba(255, 170, 0, 0.38);
+    background:
+      linear-gradient(180deg, rgba(255, 170, 0, 0.18), rgba(255, 255, 255, 0.03)),
+      rgba(255, 255, 255, 0.05);
+  }
+
+@media (max-width: 740px) {
+  body {
+    min-height: 100dvh;
+  }
+
+  .app {
+    width: 100%;
+    min-height: 100dvh;
+    /* Celular: espaco do topo da tela ate o BenaLed */
+    padding: 10px 8px 18px;
+  }
+
+  .welcome-header {
+    /* Celular: espaco entre BenaLed e card */
+    margin-bottom: 32px;
+    /* Celular: ajuste acima do BenaLed dentro do header */
+    padding-top: 20px;
+  }
+
+  .welcome-title {
+    /* Celular: tamanho da fonte do BenaLed */
+    font-size: 76px;
+    letter-spacing: 0;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .canvas-header {
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  .canvas-heading {
+    text-align: center;
+  }
+
+  .canvas-title {
+    font-size: 1.28rem;
+  }
+
+  .canvas-subtitle {
+    font-size: 0.92rem;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .current-color-box {
+    justify-content: center;
+  }
+
+  .canvas-shell {
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .canvas-wrapper {
+    border-radius: 16px;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .btn {
+    min-height: 54px;
+    font-size: 0.98rem;
+    border-radius: 16px;
+  }
+
+  .preset-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@keyframes rainbowBorder {
+  0% {
+    filter: hue-rotate(0deg) blur(1.5px);
+  }
+
+  100% {
+    filter: hue-rotate(360deg) blur(1.5px);
+  }
+}
+
+/* Desktop */
+@media (min-width: 1101px) and (pointer: fine) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  .app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    /* Desktop: espaco do topo da tela ate o BenaLed */
+    padding: 8px 18px 10px;
+  }
+
+  .topbar {
+    /* Desktop: espaco extra da barra superior antes do BenaLed */
+    margin-bottom: 6px;
+  }
+
+  .welcome-header {
+    /* Desktop: espaco entre BenaLed e card */
+    margin-bottom: 6px;
+  }
+
+  .card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 16px;
+  }
+
+  .canvas-header {
+    margin-bottom: 10px;
+  }
+
+  .canvas-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+  }
+
+  .canvas-wrapper {
+    width: min(100%, calc(100vh - 255px));
+    max-height: 100%;
+    margin: 0 auto;
+    transition: width 0.22s ease;
+  }
+
+  .card.colors-open .canvas-wrapper {
+    width: min(100%, calc(100vh - 345px));
+  }
+
+  .controls {
+    margin-top: 10px;
+  }
+}
+
+.paint-toolbar {
+  justify-content: flex-start;
+}
+
+.paint-toolbar.is-hidden {
+  display: none;
+}
+
+.color-wheel-picker {
+  flex: 0 0 auto;
+}
+
+@media (min-width: 1101px) and (pointer: fine) {
+  .card {
+    justify-content: flex-start;
+  }
+}
+
+/* Tablet (base) */
+@media (min-width: 741px) and (max-width: 1100px) and (pointer: coarse) {
+  html,
+  body {
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  .app {
+    height: auto;
+    min-height: 100dvh;
+    display: block;
+    /* Tablet base (touch): espaco do topo da tela ate o BenaLed */
+    padding: 12px 14px 18px;
+  }
+
+  .topbar {
+    /* Tablet base: espaco extra da barra superior antes do BenaLed */
+    margin-bottom: 8px;
+  }
+
+  .welcome-header {
+    /* Tablet base (touch): espaco entre BenaLed e card */
+    margin-bottom: 10px;
+  }
+
+  .welcome-title {
+    /* Tablet base (touch): tamanho da fonte do BenaLed */
+    font-size: clamp(58px, 8vw, 82px);
+  }
+
+  .card {
+    display: block;
+    min-height: auto;
+    padding: 16px;
+  }
+
+  .canvas-header {
+    margin-bottom: 14px;
+  }
+
+  .canvas-shell {
+    display: block;
+    padding: 10px;
+  }
+
+  .canvas-wrapper,
+  .card.colors-open .canvas-wrapper {
+    width: min(100%, 620px);
+    max-height: none;
+    margin: 0 auto;
+  }
+
+  .controls {
+    margin-top: 14px;
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Tablet geral (independente de orientacao) */
+@media (min-width: 741px) and (max-width: 1100px) {
+  html,
+  body {
+    height: auto !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  .app {
+    height: auto !important;
+    min-height: 100dvh;
+    display: block !important;
+    /* Tablet geral: espaco do topo da tela ate o BenaLed */
+    padding: 10px 14px 18px;
+  }
+
+  .welcome-header {
+    /* Tablet geral: espaco entre BenaLed e card */
+    margin-bottom: 10px;
+  }
+
+  .welcome-title {
+    /* Tablet geral: tamanho da fonte do BenaLed */
+    font-size: clamp(60px, 8vw, 82px);
+  }
+
+  .card {
+    display: block !important;
+    min-height: auto !important;
+    padding: 16px;
+  }
+
+  .canvas-header {
+    margin-bottom: 12px;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .canvas-shell {
+    display: block !important;
+    min-height: auto !important;
+    padding: 10px;
+  }
+
+  .canvas-wrapper,
+  .card.colors-open .canvas-wrapper {
+    width: min(100%, 560px) !important;
+    max-height: none !important;
+    margin: 0 auto !important;
+  }
+
+  .paint-toolbar {
+    margin-top: 10px;
+    padding: 10px 12px;
+  }
+
+  .controls {
+    margin-top: 12px;
+    gap: 10px;
+  }
+
+  .btn {
+    min-height: 48px;
+    padding: 10px 12px;
+    font-size: 0.94rem;
+  }
+}
+
+/* Tablet horizontal */
+@media (min-width: 741px) and (max-width: 1100px) and (orientation: landscape) {
+  html,
+  body {
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  .app {
+    min-height: 100dvh;
+    height: 100dvh !important;
+    /* Tablet horizontal: espaco do topo da tela ate o BenaLed */
+    padding: 6px 10px 8px !important;
+  }
+
+  .topbar {
+    /* Tablet horizontal: espaco extra da barra superior antes do BenaLed */
+    margin-bottom: 4px;
+  }
+
+  .welcome-header {
+    /* Tablet horizontal: espaco entre BenaLed e card */
+    margin-bottom: 4px;
+    /* Tablet horizontal: ajuste acima do BenaLed dentro do header */
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .welcome-title {
+    /* Tablet horizontal: tamanho da fonte do BenaLed */
+    font-size: clamp(42px, 4.3vw, 56px) !important;
+    line-height: 0.88;
+  }
+
+  .card {
+    height: calc(100dvh - 86px) !important;
+    min-height: 0 !important;
+    padding: 10px !important;
+    border-radius: 18px;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .canvas-header {
+    margin-bottom: 8px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .canvas-heading {
+    gap: 4px;
+  }
+
+  .canvas-title {
+    font-size: 1.1rem;
+  }
+
+  .canvas-subtitle {
+    font-size: 0.82rem;
+    line-height: 1.3;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .panel-chip {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+
+  .current-color-box {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  .current-color-label {
+    font-size: 0.82rem;
+  }
+
+  .current-color-preview {
+    width: 22px;
+    height: 22px;
+    border-radius: 8px;
+  }
+
+  .canvas-shell {
+    flex: 1;
+    min-height: 0;
+    padding: 8px !important;
+    border-radius: 16px;
+  }
+
+  .canvas-wrapper,
+  .card.colors-open .canvas-wrapper {
+    width: min(100%, calc(100dvh - 300px)) !important;
+    max-height: 100%;
+    margin: 0 auto !important;
+  }
+
+  .paint-toolbar {
+    margin-top: 8px;
+    padding: 8px 10px;
+    gap: 8px;
+    border-radius: 14px;
+  }
+
+  .tool-group {
+    gap: 6px;
+  }
+
+  .tool-btn {
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+  }
+
+  .inline-palette {
+    gap: 6px;
+  }
+
+  .inline-palette .color-swatch {
+    width: 26px;
+    height: 26px;
+  }
+
+  .color-wheel-picker {
+    width: 34px;
+    height: 34px;
+    padding: 2px;
+  }
+
+  .controls {
+    margin-top: 8px;
+    gap: 8px;
+  }
+
+  .btn {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    font-size: 0.82rem;
+  }
+}
+
+/* Tablet vertical */
+@media (min-width: 741px) and (max-width: 1100px) and (orientation: portrait) {
+  .welcome-header {
+    /* Tablet vertical: espaco entre BenaLed e card */
+    margin-bottom: 10px;
+    /* Tablet vertical: ajuste acima do BenaLed dentro do header */
+    padding-top: 42px;
+    /* Tablet vertical: espacamento adicional abaixo do BenaLed antes do card */
+    padding-bottom: 76px;
+  }
+
+  .welcome-title {
+    /* Tablet vertical: tamanho da fonte do BenaLed */
+    font-size: 106px;
+    font-family: "Segoe UI", "Inter", Arial, sans-serif;
+  }
+
+  .canvas-wrapper,
+  .card.colors-open .canvas-wrapper {
+    width: min(100%, 600px) !important;
+  }
+}
+
+/* Tablet horizontal (compacto) */
+@media (min-width: 741px) and (max-width: 1400px) and (max-height: 900px) and (orientation: landscape) and (pointer: coarse) {
+  html,
+  body {
+    height: 100svh !important;
+    min-height: 100svh !important;
+    overflow: hidden !important;
+  }
+
+  body {
+    min-height: 100svh !important;
+  }
+
+  .app {
+    max-width: 930px !important;
+    min-height: 100svh !important;
+    height: 100svh !important;
+    /* Tablet horizontal compacto: espaco do topo da tela ate o BenaLed */
+    padding: 8px 10px 8px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+  }
+
+  .topbar {
+    /* Tablet horizontal compacto: espaco extra da barra superior antes do BenaLed */
+    margin-bottom: 4px !important;
+  }
+
+  .welcome-header {
+    /* Tablet horizontal compacto: espaco entre BenaLed e card */
+    margin-bottom: 8px !important;
+    /* Tablet horizontal compacto: ajuste acima do BenaLed dentro do header */
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+
+  .welcome-title {
+    /* Tablet horizontal compacto: tamanho da fonte do BenaLed */
+    font-size: clamp(40px, 4vw, 54px) !important;
+    line-height: 0.88 !important;
+    letter-spacing: -0.5px !important;
+  }
+
+  .card {
+    height: calc(100svh - 82px) !important;
+    min-height: 0 !important;
+    padding: 10px !important;
+    border-radius: 18px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+  }
+
+  .canvas-header {
+    margin-bottom: 8px !important;
+    gap: 8px !important;
+    align-items: center !important;
+  }
+
+  .canvas-heading {
+    gap: 4px !important;
+  }
+
+  .canvas-title {
+    font-size: 1.05rem !important;
+  }
+
+  .canvas-subtitle {
+    font-size: 0.8rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .header-actions {
+    gap: 8px !important;
+  }
+
+  .current-color-box {
+    gap: 8px !important;
+    padding: 6px 10px !important;
+  }
+
+  .current-color-label {
+    font-size: 0.8rem !important;
+  }
+
+  .current-color-preview {
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 8px !important;
+  }
+
+  .canvas-shell {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 8px !important;
+    border-radius: 16px !important;
+  }
+
+  .canvas-wrapper,
+  .card.colors-open .canvas-wrapper {
+    width: min(100%, calc(100svh - 150px)) !important;
+    max-height: 100% !important;
+    margin: 0 auto !important;
+  }
+
+  .paint-toolbar {
+    margin-top: 8px !important;
+    padding: 8px 10px !important;
+    gap: 8px !important;
+    border-radius: 14px !important;
+  }
+
+  .tool-group {
+    gap: 6px !important;
+  }
+
+  .tool-btn {
+    min-height: 34px !important;
+    padding: 7px 10px !important;
+    border-radius: 10px !important;
+    font-size: 0.8rem !important;
+  }
+
+  .inline-palette {
+    gap: 6px !important;
+  }
+
+  .inline-palette .color-swatch {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  .color-wheel-picker {
+    width: 34px !important;
+    height: 34px !important;
+    padding: 2px !important;
+  }
+
+  .controls {
+    margin-top: 8px !important;
+    gap: 8px !important;
+  }
+
+  .btn {
+    min-height: 40px !important;
+    padding: 8px 10px !important;
+    border-radius: 12px !important;
+    font-size: 0.8rem !important;
+  }
+}
+
+/* ===== Painel 3D trocado no lugar do quadro ===== */
+.tree3d-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#app3d {
+  width: 100%;
+  height: 100%;
+  display: block;
+  position: relative;
+  overflow: hidden;
+}
+
+#app3d canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+  cursor: grab;
+}
+
+#app3d.is-locked canvas {
+  cursor: crosshair;
+}
+
+#app3d canvas:active {
+  cursor: grabbing;
+}
+
+#app3d.is-locked canvas:active {
+  cursor: crosshair;
+}
+
+
+.lock-btn {
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.lock-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0, 229, 255, 0.30);
+  background: rgba(0, 229, 255, 0.12);
+}
+
+.lock-btn.is-locked {
+  border-color: rgba(255, 93, 115, 0.34);
+  background: rgba(255, 93, 115, 0.12);
+  color: #fff3f5;
+  box-shadow: 0 0 18px rgba(255, 93, 115, 0.10);
+}
+
+
+.lock-btn {
+  min-width: 48px;
+  padding-left: 12px;
+  padding-right: 12px;
+  font-size: 1rem;
+}
+
+
+/* Sem barra de status inferior */
+.controls {
+  margin-bottom: 0;
+}
