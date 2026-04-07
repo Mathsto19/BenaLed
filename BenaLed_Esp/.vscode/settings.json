@@ -1,4 +1,5 @@
 {
+<<<<<<< Updated upstream
     "idf.currentSetup": "C:\\esp\\v6.0\\esp-idf",
     "idf.portWin": "COM8",
     "idf.openOcdConfigs": [
@@ -10,3 +11,24 @@
     },
     "idf.flashType": "UART"
 }
+=======
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPath": "/home/kramer/esp/v5.5.1/esp-idf",
+  "idf.pythonInstallPath": "/usr/bin/python3",
+  "idf.openOcdConfigs": ["board/esp32s3-builtin.cfg"],
+  "idf.port": "/dev/ttyUSB0",
+  "idf.toolsPath": "/home/kramer/.espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32s3"
+  },
+  "clangd.path": "/home/kramer/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=/home/kramer/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
+    "--compile-commands-dir=${workspaceFolder}/build"
+  ],
+  "idf.flashType": "UART",
+  "idf.currentSetup": "/home/kramer/esp/v5.5.1/esp-idf",
+  "idf.portWin": "COM8"
+}
+>>>>>>> Stashed changes

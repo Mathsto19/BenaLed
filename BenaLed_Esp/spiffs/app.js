@@ -47,10 +47,9 @@ const EASTER_EGG_COLOR = "#060708";
 const GIF_EASTER_EGG_COLOR = "#5c5d05"; 
 
 const GIF_EASTER_EGG_PATHS = [
-  "./spfc.gif",
-  "spfc.gif",
-  "./Complemento/spfc.gif",
-  "/spfc.gif"
+  "/Complemento/spfc.gif",
+  "/spfc.gif",
+  "./Complemento/spfc.gif"
 ];
 let frame = createEmptyFrame();
 
@@ -1593,4 +1592,9 @@ window.forceConsoleMatrixUpdate = () => {
 setSelectedColor(selectedColor);
 applyPresetHoverColors();
 render();
+<<<<<<< Updated upstream
 scheduleConsoleExport();
+=======
+connectMatrixWebSocket();
+scheduleConsoleExport();
+>>>>>>> Stashed changes

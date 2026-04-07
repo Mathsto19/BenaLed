@@ -26,6 +26,8 @@ const presetButtons = document.querySelectorAll(".preset-item");
 
 const mediaBtn = document.getElementById("mediaBtn");
 const mediaInput = document.getElementById("mediaInput");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const mediaPlaybackBtn = document.getElementById("mediaPlaybackBtn");
 
 let activeVideoElement = null;
 let activeVideoUrl = null;
@@ -42,6 +44,14 @@ let paintMode = "paint";
 let isDrawing = false;
 let lastPaintedCell = null;
 let rainbowPixelCounter = 0;
+let fullscreenAutoAttempted = false;
+let shouldRestoreFullscreenAfterMediaPicker = false;
+let fullscreenRestoreAfterMediaPickerTimer = null;
+let fullscreenRestoreAfterMediaPickerAttempts = 0;
+let isRestoringFullscreenAfterMediaPicker = false;
+
+const FULLSCREEN_RESTORE_RETRY_DELAY_MS = 180;
+const FULLSCREEN_RESTORE_MAX_ATTEMPTS = 28;
 
 const EASTER_EGG_COLOR = "#060708"; 
 const GIF_EASTER_EGG_COLOR = "#5c5d05"; 
@@ -63,6 +73,261 @@ function createEmptyFrame() {
 
 function cloneFrame(source) {
   return source.map((row) => [...row]);
+}
+
+function getFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function isStandaloneDisplayMode() {
+  return Boolean(
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator.standalone === true
+  );
+}
+
+function isIPhoneDevice() {
+  return /iPhone/i.test(window.navigator.userAgent || "");
+}
+
+function canUseFullscreen() {
+  return Boolean(
+    document.fullscreenEnabled ||
+    document.webkitFullscreenEnabled ||
+    document.documentElement.requestFullscreen ||
+    document.documentElement.webkitRequestFullscreen
+  );
+}
+
+function requestAppFullscreen() {
+  const target = document.documentElement;
+
+  if (target.requestFullscreen) {
+    return target.requestFullscreen();
+  }
+
+  if (target.webkitRequestFullscreen) {
+    target.webkitRequestFullscreen();
+    return Promise.resolve();
+  }
+
+  return Promise.reject(new Error("Fullscreen API indisponivel"));
+}
+
+function exitAppFullscreen() {
+  if (document.exitFullscreen) {
+    return document.exitFullscreen();
+  }
+
+  if (document.webkitExitFullscreen) {
+    document.webkitExitFullscreen();
+    return Promise.resolve();
+  }
+
+  return Promise.reject(new Error("Nao foi possivel sair do fullscreen"));
+}
+
+function showFullscreenFallbackMessage() {
+  const isStandalone = isStandaloneDisplayMode();
+  const isIPhone = isIPhoneDevice();
+
+  const message = isIPhone && !isStandalone
+    ? "No iPhone, o Safari não libera fullscreen para páginas web."
+    : isStandalone
+      ? "Este navegador não liberou fullscreen para esta pagina."
+      : "Este navegador do celular não liberou fullscreen para esta pagina.";
+
+  alert(message);
+}
+
+function updateFullscreenButton() {
+  if (!fullscreenBtn) return;
+
+  const supported = canUseFullscreen();
+  const isActive = Boolean(getFullscreenElement());
+  const isIPhone = isIPhoneDevice();
+  const isStandalone = isStandaloneDisplayMode();
+
+  let label = supported
+    ? (isActive ? "Sair da tela cheia" : "Entrar em tela cheia")
+    : "Fullscreen indisponivel";
+
+  if (!supported && isIPhone && !isStandalone) {
+    label = "No iPhone, use Adicionar a Tela de Inicio";
+  } else if (!supported && isStandalone) {
+    label = "Modo app ativo";
+  }
+
+  fullscreenBtn.removeAttribute("disabled");
+  fullscreenBtn.setAttribute("aria-label", label);
+  fullscreenBtn.setAttribute("title", label);
+  fullscreenBtn.setAttribute("aria-pressed", String(isActive));
+  fullscreenBtn.setAttribute("aria-disabled", String(!supported));
+  fullscreenBtn.classList.toggle("is-active", isActive);
+  fullscreenBtn.classList.toggle("is-unsupported", !supported);
+  document.documentElement.classList.toggle("is-fullscreen", isActive);
+}
+
+function getLoadedPlayableMediaType() {
+  if (activeVideoElement) return "video";
+  if (activeGifState) return "gif";
+  return null;
+}
+
+function isLoadedPlayableMediaPaused() {
+  if (activeVideoElement) {
+    return activeVideoElement.paused || activeVideoElement.ended;
+  }
+
+  if (activeGifState) {
+    return Boolean(activeGifState.isPaused);
+  }
+
+  return false;
+}
+
+function updateMediaPlaybackButton() {
+  if (!mediaPlaybackBtn) return;
+
+  const mediaType = getLoadedPlayableMediaType();
+  const hasPlayableMedia = Boolean(mediaType);
+
+  mediaPlaybackBtn.hidden = !hasPlayableMedia;
+  mediaPlaybackBtn.setAttribute("aria-hidden", String(!hasPlayableMedia));
+
+  if (!hasPlayableMedia) {
+    mediaPlaybackBtn.classList.remove("is-paused");
+    mediaPlaybackBtn.setAttribute("aria-pressed", "false");
+    return;
+  }
+
+  const isPaused = isLoadedPlayableMediaPaused();
+  const labelTarget = mediaType === "gif" ? "GIF" : "video";
+  const label = isPaused ? `Iniciar ${labelTarget}` : `Parar ${labelTarget}`;
+
+  mediaPlaybackBtn.setAttribute("aria-label", label);
+  mediaPlaybackBtn.setAttribute("title", label);
+  mediaPlaybackBtn.setAttribute("aria-pressed", String(!isPaused));
+  mediaPlaybackBtn.classList.toggle("is-paused", isPaused);
+}
+
+function attemptFullscreenFromGesture() {
+  if (!canUseFullscreen()) return;
+  const shouldRestore = shouldRestoreFullscreenAfterMediaPicker && !getFullscreenElement();
+
+  if (!shouldRestore && (fullscreenAutoAttempted || getFullscreenElement())) return;
+
+  if (!shouldRestore) {
+    fullscreenAutoAttempted = true;
+  }
+
+  requestAppFullscreen()
+    .catch(() => {})
+    .finally(() => {
+      if (getFullscreenElement()) {
+        shouldRestoreFullscreenAfterMediaPicker = false;
+      }
+      updateFullscreenButton();
+    });
+}
+
+function clearFullscreenRestoreAfterMediaPickerTimer() {
+  if (fullscreenRestoreAfterMediaPickerTimer !== null) {
+    clearTimeout(fullscreenRestoreAfterMediaPickerTimer);
+    fullscreenRestoreAfterMediaPickerTimer = null;
+  }
+
+  fullscreenRestoreAfterMediaPickerAttempts = 0;
+}
+
+async function restoreFullscreenAfterMediaPicker() {
+  if (!shouldRestoreFullscreenAfterMediaPicker || !canUseFullscreen()) return false;
+  if (isRestoringFullscreenAfterMediaPicker) return false;
+
+  if (getFullscreenElement()) {
+    shouldRestoreFullscreenAfterMediaPicker = false;
+    clearFullscreenRestoreAfterMediaPickerTimer();
+    updateFullscreenButton();
+    return true;
+  }
+
+  isRestoringFullscreenAfterMediaPicker = true;
+  try {
+    await requestAppFullscreen();
+  } catch (_) {
+    return false;
+  } finally {
+    isRestoringFullscreenAfterMediaPicker = false;
+    if (getFullscreenElement()) {
+      shouldRestoreFullscreenAfterMediaPicker = false;
+      clearFullscreenRestoreAfterMediaPickerTimer();
+    }
+    updateFullscreenButton();
+  }
+
+  return Boolean(getFullscreenElement());
+}
+
+function scheduleFullscreenRestoreAfterMediaPicker(immediate = false) {
+  if (!shouldRestoreFullscreenAfterMediaPicker || !canUseFullscreen()) return;
+  if (getFullscreenElement()) {
+    shouldRestoreFullscreenAfterMediaPicker = false;
+    clearFullscreenRestoreAfterMediaPickerTimer();
+    updateFullscreenButton();
+    return;
+  }
+
+  if (fullscreenRestoreAfterMediaPickerTimer !== null) {
+    if (!immediate) return;
+
+    clearTimeout(fullscreenRestoreAfterMediaPickerTimer);
+    fullscreenRestoreAfterMediaPickerTimer = null;
+  }
+
+  fullscreenRestoreAfterMediaPickerTimer = setTimeout(async () => {
+    fullscreenRestoreAfterMediaPickerTimer = null;
+
+    if (!shouldRestoreFullscreenAfterMediaPicker || getFullscreenElement()) {
+      shouldRestoreFullscreenAfterMediaPicker = false;
+      clearFullscreenRestoreAfterMediaPickerTimer();
+      updateFullscreenButton();
+      return;
+    }
+
+    const restored = await restoreFullscreenAfterMediaPicker();
+
+    if (restored || !shouldRestoreFullscreenAfterMediaPicker) {
+      return;
+    }
+
+    fullscreenRestoreAfterMediaPickerAttempts += 1;
+
+    if (fullscreenRestoreAfterMediaPickerAttempts >= FULLSCREEN_RESTORE_MAX_ATTEMPTS) {
+      return;
+    }
+
+    scheduleFullscreenRestoreAfterMediaPicker();
+  }, immediate ? 0 : FULLSCREEN_RESTORE_RETRY_DELAY_MS);
+}
+
+async function toggleFullscreenFromButton() {
+  if (!canUseFullscreen()) {
+    showFullscreenFallbackMessage();
+    return;
+  }
+
+  try {
+    if (getFullscreenElement()) {
+      await exitAppFullscreen();
+    } else {
+      await requestAppFullscreen();
+    }
+  } catch (error) {
+    console.warn("Falha ao alternar fullscreen.", error);
+    alert("O navegador bloqueou a tela cheia. Tente tocar no botao novamente ou abrir como app/PWA.");
+  } finally {
+    updateFullscreenButton();
+  }
 }
 
 
@@ -487,6 +752,7 @@ function stopActiveGifPlayback() {
 
   activeGifImage = null;
   activeGifState = null;
+  updateMediaPlaybackButton();
 }
 
 async function loadImageFileToFrame(file) {
@@ -595,6 +861,7 @@ function stopActiveVideoPlayback() {
   }
 
   isStoppingVideoPlayback = false;
+  updateMediaPlaybackButton();
 }
 
 
@@ -609,16 +876,52 @@ function renderGifCanvasFrame(frameCanvas) {
 }
 
 function playNextGifFrame() {
-  if (!activeGifState || activeGifState.frames.length === 0) return;
+  if (!activeGifState || activeGifState.frames.length === 0 || activeGifState.isPaused) return;
 
   const currentFrame = activeGifState.frames[activeGifState.frameIndex];
 
   renderGifCanvasFrame(currentFrame.canvas);
+  activeGifState.lastDelayMs = currentFrame.delayMs;
 
   activeGifState.frameIndex =
     (activeGifState.frameIndex + 1) % activeGifState.frames.length;
 
-  gifPlaybackTimer = setTimeout(playNextGifFrame, currentFrame.delayMs);
+  gifPlaybackTimer = setTimeout(() => {
+    gifPlaybackTimer = null;
+    playNextGifFrame();
+  }, currentFrame.delayMs);
+}
+
+function pauseActiveGifPlayback() {
+  if (!activeGifState) return;
+
+  activeGifState.isPaused = true;
+
+  if (gifPlaybackTimer !== null) {
+    clearTimeout(gifPlaybackTimer);
+    gifPlaybackTimer = null;
+  }
+
+  updateMediaPlaybackButton();
+}
+
+function resumeActiveGifPlayback() {
+  if (!activeGifState) return;
+
+  activeGifState.isPaused = false;
+  updateMediaPlaybackButton();
+
+  const delayMs = activeGifState.lastDelayMs ?? 0;
+
+  if (delayMs > 0) {
+    gifPlaybackTimer = setTimeout(() => {
+      gifPlaybackTimer = null;
+      playNextGifFrame();
+    }, delayMs);
+    return;
+  }
+
+  playNextGifFrame();
 }
 
 async function loadGifFileToFrame(file) {
@@ -635,10 +938,13 @@ async function loadGifFileToFrame(file) {
     activeGifState = {
       frames: decodedFrames,
       frameIndex: 0,
+      isPaused: false,
+      lastDelayMs: null,
     };
 
+    updateMediaPlaybackButton();
     playNextGifFrame();
-    } catch (error) {
+  } catch (error) {
     console.error(error);
     stopActiveGifPlayback();
     alert(error.message || "Não foi possível carregar o GIF selecionado.");
@@ -655,6 +961,8 @@ function renderVideoFrameToFrame(video) {
 }
 
 function animateVideoToLedFrame() {
+  videoAnimationFrameId = null;
+
   if (!activeVideoElement) return;
 
   if (
@@ -665,7 +973,67 @@ function animateVideoToLedFrame() {
     renderVideoFrameToFrame(activeVideoElement);
   }
 
+  if (activeVideoElement.paused || activeVideoElement.ended) {
+    updateMediaPlaybackButton();
+    return;
+  }
+
   videoAnimationFrameId = requestAnimationFrame(animateVideoToLedFrame);
+}
+
+function startVideoAnimationLoop() {
+  if (videoAnimationFrameId !== null) return;
+  videoAnimationFrameId = requestAnimationFrame(animateVideoToLedFrame);
+}
+
+function pauseActiveVideoPlayback() {
+  if (!activeVideoElement) return;
+
+  if (videoAnimationFrameId !== null) {
+    cancelAnimationFrame(videoAnimationFrameId);
+    videoAnimationFrameId = null;
+  }
+
+  activeVideoElement.pause();
+
+  if (activeVideoElement.readyState >= 2) {
+    renderVideoFrameToFrame(activeVideoElement);
+  }
+
+  updateMediaPlaybackButton();
+}
+
+async function resumeActiveVideoPlayback() {
+  if (!activeVideoElement) return;
+
+  try {
+    await activeVideoElement.play();
+    startVideoAnimationLoop();
+  } catch (error) {
+    console.error(error);
+    alert("Nao foi possivel reiniciar o video.");
+  } finally {
+    updateMediaPlaybackButton();
+  }
+}
+
+function toggleActiveMediaPlayback() {
+  if (activeVideoElement) {
+    if (activeVideoElement.paused || activeVideoElement.ended) {
+      resumeActiveVideoPlayback();
+    } else {
+      pauseActiveVideoPlayback();
+    }
+    return;
+  }
+
+  if (activeGifState) {
+    if (activeGifState.isPaused) {
+      resumeActiveGifPlayback();
+    } else {
+      pauseActiveGifPlayback();
+    }
+  }
 }
 
 function loadVideoFileToFrame(file) {
@@ -688,9 +1056,11 @@ function loadVideoFileToFrame(file) {
   video.onloadedmetadata = async () => {
     try {
       await video.play();
-      animateVideoToLedFrame();
+      updateMediaPlaybackButton();
+      startVideoAnimationLoop();
     } catch (error) {
       console.error(error);
+      updateMediaPlaybackButton();
       if (!isStoppingVideoPlayback) {
         alert("Não foi possível iniciar o vídeo automaticamente.");
       }
@@ -1380,6 +1750,7 @@ function stopDrawing(event) {
 
 canvas.addEventListener("pointerdown", (event) => {
   event.preventDefault();
+  attemptFullscreenFromGesture();
 
   stopActiveMediaPlayback();
 
@@ -1427,22 +1798,44 @@ clearBtn.addEventListener("click", clearFrame);
 presetBtn.addEventListener("click", () => openModal(presetModal));
 
 mediaBtn.addEventListener("click", () => {
+  shouldRestoreFullscreenAfterMediaPicker = Boolean(getFullscreenElement());
+  clearFullscreenRestoreAfterMediaPickerTimer();
   mediaInput.click();
 });
 
-mediaInput.addEventListener("change", (event) => {
+if (fullscreenBtn) {
+  fullscreenBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleFullscreenFromButton();
+  });
+}
+
+if (mediaPlaybackBtn) {
+  mediaPlaybackBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleActiveMediaPlayback();
+  });
+}
+
+mediaInput.addEventListener("change", async (event) => {
+  await restoreFullscreenAfterMediaPicker();
+
   const file = event.target.files?.[0];
 
-  if (!file) return;
+  if (!file) {
+    mediaInput.value = "";
+    scheduleFullscreenRestoreAfterMediaPicker();
+    return;
+  }
 
   const isGif =
     file.type === "image/gif" ||
     /\.gif$/i.test(file.name);
 
   if (isGif) {
-    loadGifFileToFrame(file);
+    await loadGifFileToFrame(file);
   } else if (file.type.startsWith("image/")) {
-    loadImageFileToFrame(file);
+    await loadImageFileToFrame(file);
   } else if (file.type.startsWith("video/")) {
     loadVideoFileToFrame(file);
   } else {
@@ -1450,6 +1843,7 @@ mediaInput.addEventListener("change", (event) => {
   }
 
   mediaInput.value = "";
+  scheduleFullscreenRestoreAfterMediaPicker();
 });
 
 toggleColorsBtn.addEventListener("click", () => {
@@ -1480,6 +1874,19 @@ window.addEventListener("keydown", (event) => {
     closeModal(presetModal);
   }
 });
+
+window.addEventListener("focus", () => {
+  scheduleFullscreenRestoreAfterMediaPicker();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    scheduleFullscreenRestoreAfterMediaPicker();
+  }
+});
+
+document.addEventListener("fullscreenchange", updateFullscreenButton);
+document.addEventListener("webkitfullscreenchange", updateFullscreenButton);
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -1563,3 +1970,5 @@ setSelectedColor(selectedColor);
 applyPresetHoverColors();
 render();
 scheduleConsoleExport();
+updateFullscreenButton();
+updateMediaPlaybackButton();
