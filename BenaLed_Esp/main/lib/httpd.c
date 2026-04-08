@@ -115,6 +115,11 @@ esp_err_t gifuct_get_handler(httpd_req_t *req)
     return send_file(req, "/spiffs/gifuct-js.min.js", "application/javascript");
 }
 
+esp_err_t spfc_gif_get_handler(httpd_req_t *req)
+{
+    return send_file(req, "/spiffs/Complemento/spfc.gif", "image/gif");
+}
+
 esp_err_t favicon_get_handler(httpd_req_t *req)
 {
     return send_file(req, "/spiffs/favicon.ico", "image/x-icon");

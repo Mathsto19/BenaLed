@@ -148,6 +148,13 @@ httpd_handle_t start_webserver(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t spfc_gif_uri = {
+        .uri = "/Complemento/spfc.gif",
+        .method = HTTP_GET,
+        .handler = spfc_gif_get_handler,
+        .user_ctx = NULL,
+    };
+
     httpd_uri_t matrix_uri = {
         .uri = "/matrix",
         .method = HTTP_GET,
@@ -168,6 +175,7 @@ httpd_handle_t start_webserver(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &css_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &js_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &gifuct_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &spfc_gif_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &matrix_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &favicon_uri));
 
