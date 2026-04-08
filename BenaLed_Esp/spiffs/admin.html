@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BenaLed Admin</title>
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg-2: #0d1728;
+      --bg-3: #101d33;
+      --panel: rgba(10, 16, 29, 0.84);
+      --panel-2: rgba(17, 28, 45, 0.86);
+      --line: rgba(126, 146, 179, 0.22);
+      --line-strong: rgba(0, 229, 255, 0.26);
+      --text: #f6f8fb;
+      --muted: #9aa8bf;
+      --ok: #4de3a2;
+      --danger: #ff6b6b;
+      --btn: rgba(255, 255, 255, 0.06);
+      --btn-hover: rgba(0, 229, 255, 0.16);
+      --btn-border: rgba(255, 255, 255, 0.1);
+      --focus: rgba(0, 229, 255, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(0, 229, 255, 0.08), transparent 28%),
+        radial-gradient(circle at 20% 80%, rgba(0, 153, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 45%, var(--bg-3) 100%);
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    .bg-orb {
+      position: fixed;
+      border-radius: 999px;
+      filter: blur(90px);
+      pointer-events: none;
+      opacity: 0.34;
+      z-index: 0;
+    }
+
+    .bg-orb-1 {
+      width: 220px;
+      height: 220px;
+      top: 60px;
+      left: 8%;
+      background: rgba(0, 229, 255, 0.2);
+    }
+
+    .bg-orb-2 {
+      width: 270px;
+      height: 270px;
+      right: 10%;
+      bottom: 60px;
+      background: rgba(97, 66, 255, 0.2);
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 16px 16px 26px;
+    }
+
+    .top {
+      margin-bottom: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+        var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 16px 16px 14px;
+      box-shadow:
+        0 18px 42px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand-title {
+      position: relative;
+      display: inline-block;
+      margin: 0;
+      font-family: "Arial Narrow", "Bahnschrift SemiCondensed", Arial, sans-serif;
+      font-size: clamp(40px, 5vw, 62px);
+      font-weight: 600;
+      line-height: 0.92;
+      letter-spacing: -0.6px;
+      isolation: isolate;
+    }
+
+    .brand-title span {
+      position: relative;
+      z-index: 2;
+      color: #000;
+      font-weight: 600;
+    }
+
+    .brand-title::before {
+      content: attr(data-text);
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      color: transparent;
+      pointer-events: none;
+      text-shadow:
+        -2px 0 0 #ff004c,
+         2px 0 0 #ff7a00,
+         0 -2px 0 #00e5ff,
+         0 2px 0 #8a2eff;
+      animation: hueflow 4s linear infinite;
+    }
+
+    .brand-title::after {
+      content: attr(data-text);
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      color: transparent;
+      pointer-events: none;
+      opacity: 0.7;
+      text-shadow:
+        0 0 4px #ff004c,
+        0 0 6px #ff7a00,
+        0 0 8px #00e5ff,
+        0 0 10px #8a2eff;
+      filter: blur(1.2px);
+      animation: hueflow 4s linear infinite;
+    }
+
+    .subtitle {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 70ch;
+      font-size: 0.96rem;
+    }
+
+    .notice {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--btn-border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted);
+      font-size: 0.95rem;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+    }
+
+    .notice.ok {
+      border-color: rgba(77, 227, 162, 0.45);
+      color: var(--ok);
+    }
+
+    .notice.error {
+      border-color: rgba(255, 107, 107, 0.5);
+      color: var(--danger);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
+        linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow:
+        0 12px 28px rgba(0, 0, 0, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(10px);
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+      letter-spacing: 0.01em;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    input[type="number"] {
+      width: 100%;
+      min-height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--btn-border);
+      background: rgba(8, 12, 20, 0.8);
+      color: var(--text);
+      padding: 0 10px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.16s ease, box-shadow 0.16s ease;
+    }
+
+    input[type="number"]:focus {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.16);
+    }
+
+    button {
+      min-height: 40px;
+      border: 1px solid var(--btn-border);
+      border-radius: 10px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+        var(--btn);
+      color: var(--text);
+      padding: 0 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+    button:hover {
+      background: var(--btn-hover);
+      border-color: var(--line-strong);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button.danger {
+      background:
+        linear-gradient(180deg, rgba(255, 107, 107, 0.16), rgba(255, 255, 255, 0.03)),
+        rgba(255, 107, 107, 0.08);
+      border-color: rgba(255, 107, 107, 0.35);
+      color: #ffd4d4;
+    }
+
+    button.danger:hover {
+      background: rgba(255, 107, 107, 0.28);
+    }
+
+    .turn-user {
+      margin: 0 0 10px;
+      color: var(--muted);
+    }
+
+    .turn-user strong {
+      color: var(--text);
+    }
+
+    .queue-list {
+      margin: 0;
+      padding: 10px 14px 10px 30px;
+      color: var(--text);
+      line-height: 1.5;
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      background: rgba(8, 13, 22, 0.74);
+    }
+
+    .queue-list li {
+      padding-right: 8px;
+    }
+
+    .meta {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.87rem;
+      text-align: right;
+    }
+
+    @media (max-width: 860px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .brand-title {
+        font-size: clamp(36px, 11vw, 54px);
+      }
+
+      .subtitle {
+        font-size: 0.93rem;
+      }
+    }
+
+    @keyframes hueflow {
+      0% {
+        filter: hue-rotate(0deg) blur(1.2px);
+      }
+
+      100% {
+        filter: hue-rotate(360deg) blur(1.2px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-orb bg-orb-1"></div>
+  <div class="bg-orb bg-orb-2"></div>
+  <main class="shell">
+    <header class="top">
+      <h1 class="brand-title" data-text="BenaLed Admin"><span>BenaLed Admin</span></h1>
+      <p class="subtitle">
+        Controle direto de fila e politicas do sistema. Esta area existe apenas na rota <code>/admin</code>.
+      </p>
+      <div id="notice" class="notice">Carregando estado atual...</div>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Modo Fila</h2>
+        <div class="row">
+          <button id="queueModeBtn" type="button">Ativar modo fila</button>
+          <button id="clearQueueBtn" type="button" class="danger">Limpar fila</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Rotacao</h2>
+        <div class="row">
+          <button id="rotationBtn" type="button">Pausar rotacao</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Politicas</h2>
+        <form id="policyForm">
+          <div class="field-grid">
+            <label for="defaultTurnSec">
+              Tempo padrao do turno (s)
+              <input id="defaultTurnSec" name="default_turn_sec" type="number" min="1" required />
+            </label>
+            <label for="minTurnSec">
+              Tempo minimo (s)
+              <input id="minTurnSec" name="min_turn_sec" type="number" min="1" required />
+            </label>
+            <label for="maxTurnSec">
+              Tempo maximo (s)
+              <input id="maxTurnSec" name="max_turn_sec" type="number" min="1" required />
+            </label>
+            <label for="maxUsers">
+              Maximo de usuarios
+              <input id="maxUsers" name="max_users" type="number" min="1" required />
+            </label>
+          </div>
+          <button id="applyPoliciesBtn" type="submit">Aplicar politicas</button>
+        </form>
+      </article>
+
+      <article class="card">
+        <h2>Fila Atual</h2>
+        <p class="turn-user">Usuario do turno atual: <strong id="currentUser">-</strong></p>
+        <ul id="queueList" class="queue-list"></ul>
+      </article>
+    </section>
+
+    <p id="lastSync" class="meta"></p>
+  </main>
+
+  <script>
+    (function () {
+      const endpoint = "/admin";
+      const pollIntervalMs = 5000;
+
+      const noticeEl = document.getElementById("notice");
+      const queueModeBtn = document.getElementById("queueModeBtn");
+      const clearQueueBtn = document.getElementById("clearQueueBtn");
+      const rotationBtn = document.getElementById("rotationBtn");
+      const policyForm = document.getElementById("policyForm");
+      const defaultTurnInput = document.getElementById("defaultTurnSec");
+      const minTurnInput = document.getElementById("minTurnSec");
+      const maxTurnInput = document.getElementById("maxTurnSec");
+      const maxUsersInput = document.getElementById("maxUsers");
+      const currentUserEl = document.getElementById("currentUser");
+      const queueListEl = document.getElementById("queueList");
+      const lastSyncEl = document.getElementById("lastSync");
+
+      let state = null;
+      let syncTimer = null;
+      let pendingRequests = 0;
+
+      function setBusy(isBusy) {
+        pendingRequests += isBusy ? 1 : -1;
+        if (pendingRequests < 0) pendingRequests = 0;
+        const disabled = pendingRequests > 0;
+        queueModeBtn.disabled = disabled;
+        clearQueueBtn.disabled = disabled;
+        rotationBtn.disabled = disabled;
+        defaultTurnInput.disabled = disabled;
+        minTurnInput.disabled = disabled;
+        maxTurnInput.disabled = disabled;
+        maxUsersInput.disabled = disabled;
+        document.getElementById("applyPoliciesBtn").disabled = disabled;
+      }
+
+      function setNotice(message, type) {
+        noticeEl.textContent = message || "";
+        noticeEl.classList.remove("ok", "error");
+        if (type === "ok") noticeEl.classList.add("ok");
+        if (type === "error") noticeEl.classList.add("error");
+      }
+
+      function updateQueueList(queue) {
+        queueListEl.innerHTML = "";
+
+        if (!Array.isArray(queue) || queue.length === 0) {
+          const item = document.createElement("li");
+          item.textContent = "Fila vazia.";
+          queueListEl.appendChild(item);
+          return;
+        }
+
+        queue.forEach(function (user, index) {
+          const item = document.createElement("li");
+          item.textContent = index === 0 ? user + " (turno atual)" : user;
+          queueListEl.appendChild(item);
+        });
+      }
+
+      function render(data) {
+        state = data;
+
+        queueModeBtn.textContent = data.queue_mode_enabled ? "Desativar modo fila" : "Ativar modo fila";
+        rotationBtn.textContent = data.rotation_paused ? "Retomar rotacao" : "Pausar rotacao";
+
+        defaultTurnInput.value = String(data.default_turn_sec);
+        minTurnInput.value = String(data.min_turn_sec);
+        maxTurnInput.value = String(data.max_turn_sec);
+        maxUsersInput.value = String(data.max_users);
+        maxUsersInput.max = String(data.ap_max_connections || 1);
+
+        currentUserEl.textContent = data.current_user && data.current_user.length > 0 ? data.current_user : "Nenhum";
+        updateQueueList(data.queue);
+        lastSyncEl.textContent = "Ultima atualizacao: " + new Date().toLocaleTimeString();
+      }
+
+      async function postAction(action, payload) {
+        const params = new URLSearchParams();
+        params.set("action", action);
+
+        if (payload && typeof payload === "object") {
+          Object.keys(payload).forEach(function (key) {
+            params.set(key, String(payload[key]));
+          });
+        }
+
+        setBusy(true);
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: params.toString(),
+            cache: "no-store",
+          });
+
+          const raw = await response.text();
+          let data = null;
+
+          try {
+            data = JSON.parse(raw);
+          } catch (err) {
+            throw new Error("Resposta inesperada do servidor.");
+          }
+
+          if (!response.ok || !data.ok) {
+            throw new Error(data.message || "Falha na operacao administrativa.");
+          }
+
+          render(data);
+          return data;
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function refresh(showSuccessMessage) {
+        try {
+          await postAction("status");
+          if (showSuccessMessage) {
+            setNotice("Central administrativa pronta.", "ok");
+          }
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      }
+
+      queueModeBtn.addEventListener("click", async function () {
+        if (!state) return;
+        try {
+          const enabled = !state.queue_mode_enabled;
+          await postAction("set_queue_mode", { enabled: enabled ? 1 : 0 });
+          setNotice(enabled ? "Modo fila ativado." : "Modo fila desativado.", "ok");
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      });
+
+      clearQueueBtn.addEventListener("click", async function () {
+        const confirmed = window.confirm("Deseja limpar a fila agora?");
+        if (!confirmed) return;
+        try {
+          await postAction("clear_queue");
+          setNotice("Fila limpa com sucesso.", "ok");
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      });
+
+      rotationBtn.addEventListener("click", async function () {
+        if (!state) return;
+        try {
+          const paused = !state.rotation_paused;
+          await postAction("set_rotation", { paused: paused ? 1 : 0 });
+          setNotice(paused ? "Rotacao pausada." : "Rotacao retomada.", "ok");
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      });
+
+      policyForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        const apMaxConnections = Number(state?.ap_max_connections || 1);
+        const requestedMaxUsers = Number(maxUsersInput.value);
+        if (Number.isFinite(requestedMaxUsers) && requestedMaxUsers > apMaxConnections) {
+          maxUsersInput.value = String(apMaxConnections);
+          setNotice("Maximo de usuarios ajustado para o limite de conexoes do AP.", "error");
+          return;
+        }
+
+        const payload = {
+          default_turn_sec: defaultTurnInput.value,
+          min_turn_sec: minTurnInput.value,
+          max_turn_sec: maxTurnInput.value,
+          max_users: maxUsersInput.value,
+        };
+
+        try {
+          await postAction("apply_policies", payload);
+          setNotice("Politicas aplicadas.", "ok");
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      });
+
+      refresh(true);
+      syncTimer = window.setInterval(function () {
+        refresh(false);
+      }, pollIntervalMs);
+
+      window.addEventListener("beforeunload", function () {
+        if (syncTimer !== null) {
+          window.clearInterval(syncTimer);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

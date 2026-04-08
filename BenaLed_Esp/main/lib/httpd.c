@@ -1,5 +1,57 @@
 #include "httpd.h"
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
 #define TAG "HTTPD"
+
+static bool host_matches(const char *host, const char *candidate)
+{
+    if (host == NULL || candidate == NULL)
+    {
+        return false;
+    }
+
+    size_t host_len = strcspn(host, ":");
+    size_t candidate_len = strlen(candidate);
+    if (host_len != candidate_len)
+    {
+        return false;
+    }
+
+    return strncasecmp(host, candidate, candidate_len) == 0;
+}
+
+static bool should_redirect_host_to_portal(httpd_req_t *req)
+{
+    char host[128] = {0};
+    size_t host_len = httpd_req_get_hdr_value_len(req, "Host");
+    if (host_len == 0 || host_len >= sizeof(host))
+    {
+        return true;
+    }
+
+    if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK)
+    {
+        return true;
+    }
+
+    char ap_ip[20];
+    snprintf(ap_ip, sizeof(ap_ip), "%u.%u.%u.%u",
+             (unsigned)AP_IP_BYTES[0],
+             (unsigned)AP_IP_BYTES[1],
+             (unsigned)AP_IP_BYTES[2],
+             (unsigned)AP_IP_BYTES[3]);
+
+    if (host_matches(host, "BenaLed.com") ||
+        host_matches(host, ap_ip) ||
+        host_matches(host, "localhost"))
+    {
+        return true;
+    }
+
+    return false;
+}
 
 const char *benaled_http_method_str(httpd_method_t method)
 {
@@ -45,6 +97,17 @@ esp_err_t captive_redirect_common(httpd_req_t *req)
 {
     log_http_request(req);
 
+    // Evita redirecionar hosts externos (ex.: apps de fundo de Android/Samsung),
+    // o que reduz tempestade de conexoes HTTP no captive portal.
+    if (!should_redirect_host_to_portal(req))
+    {
+        httpd_resp_set_status(req, "204 No Content");
+        httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        httpd_resp_set_hdr(req, "Pragma", "no-cache");
+        httpd_resp_set_hdr(req, "Connection", "close");
+        return httpd_resp_send(req, NULL, 0);
+    }
+
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", PORTAL_URL "/");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -78,6 +141,7 @@ esp_err_t send_file(httpd_req_t *req, const char *path, const char *content_type
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     httpd_resp_set_hdr(req, "Pragma", "no-cache");
     httpd_resp_set_hdr(req, "Expires", "0");
+    httpd_resp_set_hdr(req, "Connection", "close");
 
     char chunk[1024];
     size_t read_bytes = 0;
