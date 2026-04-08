@@ -6,8 +6,11 @@
 #include "wifi_lib.h"
 #include "dns_task.h"
 #include "matrix_task.h"
+#include "oled_task.h"
 #include "webserver.h"
 #include "driver/rmt_tx.h"
+
+static const char *TAG = "main";
 
 void app_main(void)
 {
@@ -20,6 +23,12 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     init_spiffs();
+    ret = init_oled_task();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Falha ao iniciar OLED: %s", esp_err_to_name(ret));
+    }
+
     init_wifi_softap();
     ESP_ERROR_CHECK(init_matrix_task());
     start_webserver();

@@ -26,6 +26,18 @@
 #define MATRIX_QUEUE_LEN 2
 #define PORTAL_URL "http://BenaLed.com"
 
+// OLED (Heltec HTUT-WB32LA(F))
+#define OLED_I2C_PORT_NUM 0
+#define OLED_I2C_SDA_GPIO 17
+#define OLED_I2C_SCL_GPIO 18
+#define OLED_RESET_GPIO 21
+#define OLED_VEXT_CTRL_GPIO 36
+#define OLED_VEXT_ACTIVE_LEVEL 0
+#define OLED_I2C_ADDRESS 0x3C
+#define OLED_I2C_FREQ_HZ 400000
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 64
+
 static const uint8_t AP_IP_BYTES[4] = {4, 3, 2, 1};
 
 #endif // APP_CONFIG_H

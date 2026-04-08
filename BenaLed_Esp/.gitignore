@@ -1,10 +1,12 @@
+# ESP-IDF artifacts
 build/
 build-*/
 sdkconfig
 sdkconfig.old
-.devcontainer
+
+# IDE / local tooling
 .vscode/
+.devcontainer/
+
+# Local machine files
 microsoft.gpg
-./build
-./.vscode
-.vscode

@@ -7,6 +7,7 @@ idf_component_register(
          "lib/webserver.c"
          "tasks/dns_task.c"
          "tasks/matrix_task.c"
+         "tasks/oled_task.c"
 
     INCLUDE_DIRS "." "lib" "lib/include" "tasks" "tasks/include"
 
