@@ -148,20 +148,6 @@ httpd_handle_t start_webserver(void)
         .user_ctx = NULL,
     };
 
-    httpd_uri_t easter_egg_gif_uri = {
-        .uri = "/Complemento/spfc.gif",
-        .method = HTTP_GET,
-        .handler = easter_egg_gif_get_handler,
-        .user_ctx = NULL,
-    };
-
-    httpd_uri_t easter_egg_gif_alias_uri = {
-        .uri = "/spfc.gif",
-        .method = HTTP_GET,
-        .handler = easter_egg_gif_get_handler,
-        .user_ctx = NULL,
-    };
-
     httpd_uri_t matrix_uri = {
         .uri = "/matrix",
         .method = HTTP_GET,
@@ -182,8 +168,6 @@ httpd_handle_t start_webserver(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &css_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &js_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &gifuct_uri));
-    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &easter_egg_gif_uri));
-    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &easter_egg_gif_alias_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &matrix_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &favicon_uri));
 

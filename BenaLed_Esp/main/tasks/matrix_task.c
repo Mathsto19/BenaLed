@@ -90,10 +90,7 @@ static esp_err_t rmt_matrix_init(void)
         .trans_queue_depth = RMT_QUEUE_DEPTH,
         .gpio_num = RMT_GPIO_NUM,
         .flags = {
-            .with_dma = true,   // Habilitar DMA
-            .invert_out = false,
-            .allow_pd = false,
-            .init_level = 0,
+            .with_dma = true, // Habilitar DMA
         },
     };
 

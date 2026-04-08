@@ -1,17 +1,4 @@
 {
-<<<<<<< Updated upstream
-    "idf.currentSetup": "C:\\esp\\v6.0\\esp-idf",
-    "idf.portWin": "COM8",
-    "idf.openOcdConfigs": [
-        "interface/ftdi/esp32_devkitj_v1.cfg",
-        "target/esp32.cfg"
-    ],
-    "idf.customExtraVars": {
-        "IDF_TARGET": "esp32"
-    },
-    "idf.flashType": "UART"
-}
-=======
   "C_Cpp.intelliSenseEngine": "default",
   "idf.espIdfPath": "/home/kramer/esp/v5.5.1/esp-idf",
   "idf.pythonInstallPath": "/usr/bin/python3",
@@ -31,4 +18,3 @@
   "idf.currentSetup": "/home/kramer/esp/v5.5.1/esp-idf",
   "idf.portWin": "COM8"
 }
->>>>>>> Stashed changes
