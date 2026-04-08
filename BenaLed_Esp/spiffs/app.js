@@ -29,6 +29,7 @@ const presetButtons = document.querySelectorAll(".preset-item");
 
 const mediaBtn = document.getElementById("mediaBtn");
 const mediaInput = document.getElementById("mediaInput");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
 
 let activeVideoElement = null;
 let activeVideoUrl = null;
@@ -41,6 +42,8 @@ let activeGifState = null;
 let gifPlaybackTimer = null;
 let lastMediaPreviewRenderAt = 0;
 let lastMediaProcessAt = 0;
+let shouldRestoreFullscreenAfterMediaPicker = false;
+let fullscreenRestoreTimerId = null;
 
 let reusableMediaSourceCanvas = null;
 let reusableMediaSourceCtx = null;
@@ -74,6 +77,158 @@ function createEmptyFrame() {
 
 function cloneFrame(source) {
   return source.map((row) => [...row]);
+}
+
+function getFullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function isStandaloneDisplayMode() {
+  return Boolean(
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator.standalone === true
+  );
+}
+
+function isIPhoneDevice() {
+  return /iPhone/i.test(window.navigator.userAgent || "");
+}
+
+function canUseFullscreen() {
+  return Boolean(
+    document.fullscreenEnabled ||
+    document.webkitFullscreenEnabled ||
+    document.documentElement.requestFullscreen ||
+    document.documentElement.webkitRequestFullscreen
+  );
+}
+
+function requestAppFullscreen() {
+  const target = document.documentElement;
+
+  if (target.requestFullscreen) {
+    return target.requestFullscreen();
+  }
+
+  if (target.webkitRequestFullscreen) {
+    target.webkitRequestFullscreen();
+    return Promise.resolve();
+  }
+
+  return Promise.reject(new Error("Fullscreen API indisponivel"));
+}
+
+function exitAppFullscreen() {
+  if (document.exitFullscreen) {
+    return document.exitFullscreen();
+  }
+
+  if (document.webkitExitFullscreen) {
+    document.webkitExitFullscreen();
+    return Promise.resolve();
+  }
+
+  return Promise.reject(new Error("Nao foi possivel sair do fullscreen"));
+}
+
+function showFullscreenFallbackMessage() {
+  const isStandalone = isStandaloneDisplayMode();
+  const isIPhone = isIPhoneDevice();
+
+  const message = isIPhone && !isStandalone
+    ? "No iPhone, o Safari nao libera fullscreen para paginas web."
+    : isStandalone
+      ? "Este navegador nao liberou fullscreen para esta pagina."
+      : "Este navegador do celular nao liberou fullscreen para esta pagina.";
+
+  alert(message);
+}
+
+function clearFullscreenRestoreTimer() {
+  if (fullscreenRestoreTimerId !== null) {
+    window.clearTimeout(fullscreenRestoreTimerId);
+    fullscreenRestoreTimerId = null;
+  }
+}
+
+async function tryRestoreFullscreenAfterMediaPicker() {
+  if (!shouldRestoreFullscreenAfterMediaPicker) return;
+
+  if (!canUseFullscreen() || getFullscreenElement()) {
+    shouldRestoreFullscreenAfterMediaPicker = false;
+    updateFullscreenButton();
+    return;
+  }
+
+  try {
+    await requestAppFullscreen();
+    shouldRestoreFullscreenAfterMediaPicker = false;
+  } catch (error) {
+    console.warn("Falha ao restaurar fullscreen apos selecionar arquivo.", error);
+  } finally {
+    updateFullscreenButton();
+  }
+}
+
+function scheduleFullscreenRestoreAfterMediaPicker(delayMs = 120) {
+  if (!shouldRestoreFullscreenAfterMediaPicker) return;
+
+  clearFullscreenRestoreTimer();
+
+  fullscreenRestoreTimerId = window.setTimeout(() => {
+    fullscreenRestoreTimerId = null;
+
+    void tryRestoreFullscreenAfterMediaPicker();
+  }, delayMs);
+}
+
+function updateFullscreenButton() {
+  if (!fullscreenBtn) return;
+
+  const supported = canUseFullscreen();
+  const isActive = Boolean(getFullscreenElement());
+  const isIPhone = isIPhoneDevice();
+  const isStandalone = isStandaloneDisplayMode();
+
+  let label = supported
+    ? (isActive ? "Sair da tela cheia" : "Entrar em tela cheia")
+    : "Fullscreen indisponivel";
+
+  if (!supported && isIPhone && !isStandalone) {
+    label = "No iPhone, use Adicionar a Tela de Inicio";
+  } else if (!supported && isStandalone) {
+    label = "Modo app ativo";
+  }
+
+  fullscreenBtn.removeAttribute("disabled");
+  fullscreenBtn.setAttribute("aria-label", label);
+  fullscreenBtn.setAttribute("title", label);
+  fullscreenBtn.setAttribute("aria-pressed", String(isActive));
+  fullscreenBtn.setAttribute("aria-disabled", String(!supported));
+  fullscreenBtn.classList.toggle("is-active", isActive);
+  fullscreenBtn.classList.toggle("is-unsupported", !supported);
+  document.documentElement.classList.toggle("is-fullscreen", isActive);
+}
+
+async function toggleFullscreenFromButton() {
+  if (!canUseFullscreen()) {
+    showFullscreenFallbackMessage();
+    updateFullscreenButton();
+    return;
+  }
+
+  try {
+    if (getFullscreenElement()) {
+      await exitAppFullscreen();
+    } else {
+      await requestAppFullscreen();
+    }
+  } catch (error) {
+    console.warn("Falha ao alternar fullscreen.", error);
+    alert("O navegador bloqueou a tela cheia. Tente tocar no botao novamente.");
+  } finally {
+    updateFullscreenButton();
+  }
 }
 
 
@@ -1620,11 +1775,23 @@ clearBtn.addEventListener("click", clearFrame);
 presetBtn.addEventListener("click", () => openModal(presetModal));
 
 mediaBtn.addEventListener("click", () => {
+  shouldRestoreFullscreenAfterMediaPicker = Boolean(getFullscreenElement());
+  clearFullscreenRestoreTimer();
   mediaInput.click();
 });
 
+if (fullscreenBtn) {
+  fullscreenBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    void toggleFullscreenFromButton();
+  });
+}
+
 mediaInput.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
+
+  void tryRestoreFullscreenAfterMediaPicker();
+  scheduleFullscreenRestoreAfterMediaPicker();
 
   if (!file) return;
 
@@ -1644,6 +1811,22 @@ mediaInput.addEventListener("change", (event) => {
 
   mediaInput.value = "";
 });
+
+window.addEventListener("focus", () => {
+  scheduleFullscreenRestoreAfterMediaPicker();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    scheduleFullscreenRestoreAfterMediaPicker();
+  }
+});
+
+document.addEventListener("pointerdown", () => {
+  if (shouldRestoreFullscreenAfterMediaPicker) {
+    void tryRestoreFullscreenAfterMediaPicker();
+  }
+}, true);
 
 toggleColorsBtn.addEventListener("click", () => {
   const isHiddenNow = paintToolbar.classList.toggle("is-hidden");
@@ -1673,6 +1856,9 @@ window.addEventListener("keydown", (event) => {
     closeModal(presetModal);
   }
 });
+
+document.addEventListener("fullscreenchange", updateFullscreenButton);
+document.addEventListener("webkitfullscreenchange", updateFullscreenButton);
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -1823,8 +2009,21 @@ window.forceConsoleMatrixUpdate = () => {
   void sendMatrixToEspNow();
 };
 
-setSelectedColor(selectedColor);
-applyPresetHoverColors();
 render();
-connectMatrixWebSocket();
-scheduleConsoleExport();
+setSelectedColor(selectedColor);
+updateFullscreenButton();
+
+requestAnimationFrame(() => {
+  connectMatrixWebSocket();
+  scheduleConsoleExport();
+});
+
+if (typeof window.requestIdleCallback === "function") {
+  window.requestIdleCallback(() => {
+    applyPresetHoverColors();
+  }, { timeout: 220 });
+} else {
+  setTimeout(() => {
+    applyPresetHoverColors();
+  }, 0);
+}
