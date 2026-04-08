@@ -30,6 +30,7 @@ const presetButtons = document.querySelectorAll(".preset-item");
 const mediaBtn = document.getElementById("mediaBtn");
 const mediaInput = document.getElementById("mediaInput");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
+const mediaPlaybackBtn = document.getElementById("mediaPlaybackBtn");
 
 let activeVideoElement = null;
 let activeVideoUrl = null;
@@ -208,6 +209,49 @@ function updateFullscreenButton() {
   fullscreenBtn.classList.toggle("is-active", isActive);
   fullscreenBtn.classList.toggle("is-unsupported", !supported);
   document.documentElement.classList.toggle("is-fullscreen", isActive);
+}
+
+function getLoadedPlayableMediaType() {
+  if (activeVideoElement) return "video";
+  if (activeGifState) return "gif";
+  return null;
+}
+
+function isLoadedPlayableMediaPaused() {
+  if (activeVideoElement) {
+    return activeVideoElement.paused || activeVideoElement.ended;
+  }
+
+  if (activeGifState) {
+    return Boolean(activeGifState.isPaused);
+  }
+
+  return false;
+}
+
+function updateMediaPlaybackButton() {
+  if (!mediaPlaybackBtn) return;
+
+  const mediaType = getLoadedPlayableMediaType();
+  const hasPlayableMedia = Boolean(mediaType);
+
+  mediaPlaybackBtn.hidden = !hasPlayableMedia;
+  mediaPlaybackBtn.setAttribute("aria-hidden", String(!hasPlayableMedia));
+
+  if (!hasPlayableMedia) {
+    mediaPlaybackBtn.classList.remove("is-paused");
+    mediaPlaybackBtn.setAttribute("aria-pressed", "false");
+    return;
+  }
+
+  const isPaused = isLoadedPlayableMediaPaused();
+  const labelTarget = mediaType === "gif" ? "GIF" : "video";
+  const label = isPaused ? `Iniciar ${labelTarget}` : `Parar ${labelTarget}`;
+
+  mediaPlaybackBtn.setAttribute("aria-label", label);
+  mediaPlaybackBtn.setAttribute("title", label);
+  mediaPlaybackBtn.setAttribute("aria-pressed", String(!isPaused));
+  mediaPlaybackBtn.classList.toggle("is-paused", isPaused);
 }
 
 async function toggleFullscreenFromButton() {
@@ -825,6 +869,7 @@ function stopActiveGifPlayback() {
 
   activeGifImage = null;
   activeGifState = null;
+  updateMediaPlaybackButton();
 }
 
 async function loadImageFileToFrame(file) {
@@ -933,6 +978,7 @@ function stopActiveVideoPlayback() {
   }
 
   isStoppingVideoPlayback = false;
+  updateMediaPlaybackButton();
 }
 
 
@@ -952,16 +998,52 @@ function renderGifCanvasFrame(frameCanvas) {
 }
 
 function playNextGifFrame() {
-  if (!activeGifState || activeGifState.frames.length === 0) return;
+  if (!activeGifState || activeGifState.frames.length === 0 || activeGifState.isPaused) return;
 
   const currentFrame = activeGifState.frames[activeGifState.frameIndex];
 
   renderGifCanvasFrame(currentFrame.canvas);
+  activeGifState.lastDelayMs = currentFrame.delayMs;
 
   activeGifState.frameIndex =
     (activeGifState.frameIndex + 1) % activeGifState.frames.length;
 
-  gifPlaybackTimer = setTimeout(playNextGifFrame, currentFrame.delayMs);
+  gifPlaybackTimer = setTimeout(() => {
+    gifPlaybackTimer = null;
+    playNextGifFrame();
+  }, currentFrame.delayMs);
+}
+
+function pauseActiveGifPlayback() {
+  if (!activeGifState) return;
+
+  activeGifState.isPaused = true;
+
+  if (gifPlaybackTimer !== null) {
+    clearTimeout(gifPlaybackTimer);
+    gifPlaybackTimer = null;
+  }
+
+  updateMediaPlaybackButton();
+}
+
+function resumeActiveGifPlayback() {
+  if (!activeGifState) return;
+
+  activeGifState.isPaused = false;
+  updateMediaPlaybackButton();
+
+  const delayMs = activeGifState.lastDelayMs ?? 0;
+
+  if (delayMs > 0) {
+    gifPlaybackTimer = setTimeout(() => {
+      gifPlaybackTimer = null;
+      playNextGifFrame();
+    }, delayMs);
+    return;
+  }
+
+  playNextGifFrame();
 }
 
 async function loadGifFileToFrame(file) {
@@ -978,8 +1060,11 @@ async function loadGifFileToFrame(file) {
     activeGifState = {
       frames: decodedFrames,
       frameIndex: 0,
+      isPaused: false,
+      lastDelayMs: null,
     };
 
+    updateMediaPlaybackButton();
     playNextGifFrame();
   } catch (error) {
     console.error(error);
@@ -1003,6 +1088,8 @@ function renderVideoFrameToFrame(video) {
 }
 
 function animateVideoToLedFrame() {
+  videoAnimationFrameId = null;
+
   if (!activeVideoElement) return;
 
   if (
@@ -1013,7 +1100,67 @@ function animateVideoToLedFrame() {
     renderVideoFrameToFrame(activeVideoElement);
   }
 
+  if (activeVideoElement.paused || activeVideoElement.ended) {
+    updateMediaPlaybackButton();
+    return;
+  }
+
   videoAnimationFrameId = requestAnimationFrame(animateVideoToLedFrame);
+}
+
+function startVideoAnimationLoop() {
+  if (videoAnimationFrameId !== null) return;
+  videoAnimationFrameId = requestAnimationFrame(animateVideoToLedFrame);
+}
+
+function pauseActiveVideoPlayback() {
+  if (!activeVideoElement) return;
+
+  if (videoAnimationFrameId !== null) {
+    cancelAnimationFrame(videoAnimationFrameId);
+    videoAnimationFrameId = null;
+  }
+
+  activeVideoElement.pause();
+
+  if (activeVideoElement.readyState >= 2) {
+    renderVideoFrameToFrame(activeVideoElement);
+  }
+
+  updateMediaPlaybackButton();
+}
+
+async function resumeActiveVideoPlayback() {
+  if (!activeVideoElement) return;
+
+  try {
+    await activeVideoElement.play();
+    startVideoAnimationLoop();
+  } catch (error) {
+    console.error(error);
+    alert("Nao foi possivel reiniciar o video.");
+  } finally {
+    updateMediaPlaybackButton();
+  }
+}
+
+function toggleActiveMediaPlayback() {
+  if (activeVideoElement) {
+    if (activeVideoElement.paused || activeVideoElement.ended) {
+      void resumeActiveVideoPlayback();
+    } else {
+      pauseActiveVideoPlayback();
+    }
+    return;
+  }
+
+  if (activeGifState) {
+    if (activeGifState.isPaused) {
+      resumeActiveGifPlayback();
+    } else {
+      pauseActiveGifPlayback();
+    }
+  }
 }
 
 function loadVideoFileToFrame(file) {
@@ -1036,9 +1183,11 @@ function loadVideoFileToFrame(file) {
   video.onloadedmetadata = async () => {
     try {
       await video.play();
-      animateVideoToLedFrame();
+      updateMediaPlaybackButton();
+      startVideoAnimationLoop();
     } catch (error) {
       console.error(error);
+      updateMediaPlaybackButton();
       if (!isStoppingVideoPlayback) {
         alert("Não foi possível iniciar o vídeo automaticamente.");
       }
@@ -1787,6 +1936,13 @@ if (fullscreenBtn) {
   });
 }
 
+if (mediaPlaybackBtn) {
+  mediaPlaybackBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    toggleActiveMediaPlayback();
+  });
+}
+
 mediaInput.addEventListener("change", (event) => {
   const file = event.target.files?.[0];
 
@@ -2012,6 +2168,7 @@ window.forceConsoleMatrixUpdate = () => {
 render();
 setSelectedColor(selectedColor);
 updateFullscreenButton();
+updateMediaPlaybackButton();
 
 requestAnimationFrame(() => {
   connectMatrixWebSocket();

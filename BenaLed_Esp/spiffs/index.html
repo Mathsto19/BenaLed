@@ -32,6 +32,24 @@
 
         <div class="header-actions">
           <button
+            id="mediaPlaybackBtn"
+            type="button"
+            class="btn header-action-btn media-playback-btn"
+            aria-label="Parar video"
+            title="Parar video"
+            hidden
+          >
+            <span class="media-playback-icon-stack" aria-hidden="true">
+              <svg class="media-playback-icon media-playback-icon-stop" viewBox="0 0 24 24" focusable="false">
+                <path d="M7 7h10v10H7z" />
+              </svg>
+              <svg class="media-playback-icon media-playback-icon-play" viewBox="0 0 24 24" focusable="false">
+                <path d="M8 6v12l10-6z" />
+              </svg>
+            </span>
+          </button>
+
+          <button
             id="fullscreenBtn"
             type="button"
             class="btn header-action-btn fullscreen-btn"
