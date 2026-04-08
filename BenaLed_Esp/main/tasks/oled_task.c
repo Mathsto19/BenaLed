@@ -16,11 +16,13 @@
 
 #define FONT_WIDTH 5
 #define FONT_HEIGHT 7
-#define FONT_SCALE 2
-#define FONT_SPACING 2
+#define FONT_SCALE_X 3
+#define FONT_SCALE_Y 4
+#define FONT_SPACING 1
 
-#define ANIM_REVEAL_FRAMES 42
-#define ANIM_CYCLE_FRAMES 180
+#define ANIM_LETTER_STEP_FRAMES 7
+#define ANIM_POST_REVEAL_FRAMES 140
+#define ANIM_CURSOR_ON_FRAMES 5
 
 typedef struct
 {
@@ -30,11 +32,11 @@ typedef struct
 
 typedef struct
 {
-    int8_t x;
-    int8_t y;
+    uint8_t x;
+    uint8_t y;
     uint8_t speed;
     uint8_t duty;
-} twinkle_t;
+} subtle_star_t;
 
 static const char *TAG = "oled_task";
 
@@ -56,23 +58,19 @@ static const glyph5x7_t s_font_table[] = {
     {'n', {0x00, 0x16, 0x19, 0x11, 0x11, 0x11, 0x11}},
 };
 
-static const twinkle_t s_twinkles[] = {
-    {6, 8, 3, 2},
-    {18, 20, 5, 2},
-    {27, 11, 4, 3},
-    {42, 6, 6, 2},
-    {57, 18, 5, 2},
-    {73, 10, 3, 1},
-    {87, 22, 4, 2},
-    {105, 8, 6, 2},
-    {118, 19, 5, 2},
-    {12, 49, 4, 2},
-    {30, 56, 6, 2},
-    {48, 46, 3, 1},
-    {66, 54, 5, 2},
-    {82, 43, 4, 2},
-    {98, 50, 6, 2},
-    {116, 58, 5, 1},
+static const subtle_star_t s_subtle_stars[] = {
+    {8, 5, 5, 1},
+    {20, 10, 6, 1},
+    {34, 6, 7, 2},
+    {52, 11, 5, 1},
+    {74, 5, 6, 1},
+    {95, 9, 7, 2},
+    {112, 6, 5, 1},
+    {15, 56, 6, 1},
+    {30, 52, 7, 2},
+    {49, 57, 5, 1},
+    {80, 53, 6, 1},
+    {103, 56, 7, 2},
 };
 
 static void oled_set_pixel(int x, int y, bool on)
@@ -95,24 +93,113 @@ static void oled_set_pixel(int x, int y, bool on)
     }
 }
 
-static void oled_draw_rect_dotted(int x, int y, int w, int h, uint32_t frame)
+static int wrap_mod(int value, int mod)
 {
-    for (int xx = x; xx < (x + w); xx++)
+    int out = value % mod;
+    if (out < 0)
     {
-        if (((xx + (int)frame) & 0x01) == 0)
+        out += mod;
+    }
+    return out;
+}
+
+static int tri_wave(int t, int period, int amp)
+{
+    const int half = period / 2;
+    const int phase = wrap_mod(t, period);
+    const int rise = (phase < half) ? phase : (period - phase);
+    return ((rise * 2 * amp) / half) - amp;
+}
+
+static void draw_subtle_stars(int x0, int y0, int text_width, int text_height, uint32_t frame)
+{
+    const int text_left = x0 - 2;
+    const int text_right = x0 + text_width + 1;
+    const int text_top = y0 - 1;
+    const int text_bottom = y0 + text_height;
+
+    for (size_t i = 0; i < (sizeof(s_subtle_stars) / sizeof(s_subtle_stars[0])); i++)
+    {
+        const subtle_star_t *star = &s_subtle_stars[i];
+
+        if (star->x >= text_left && star->x <= text_right &&
+            star->y >= text_top && star->y <= text_bottom)
         {
-            oled_set_pixel(xx, y, true);
-            oled_set_pixel(xx, y + h - 1, true);
+            continue;
+        }
+
+        const uint32_t phase = ((frame / star->speed) + (uint32_t)(i * 3U)) % 28U;
+        if (phase < star->duty)
+        {
+            oled_set_pixel(star->x, star->y, true);
+
+            if (phase == 0U)
+            {
+                if ((i & 1U) == 0U)
+                {
+                    oled_set_pixel((int)star->x - 1, star->y, true);
+                }
+                else
+                {
+                    oled_set_pixel((int)star->x + 1, star->y, true);
+                }
+            }
+        }
+    }
+}
+
+static void draw_side_beacons(int x0, int y0, int text_width, int text_height, uint32_t frame)
+{
+    const int left = x0 - 5;
+    const int right = x0 + text_width + 4;
+    const int top = y0 - 1;
+    const int height = text_height + 2;
+    const int sweep = top + wrap_mod((int)frame * 2, height + 10) - 5;
+
+    for (int y = top; y < (top + height); y += 3)
+    {
+        if (((y + (int)(frame >> 1)) & 0x01) == 0)
+        {
+            oled_set_pixel(left, y, true);
+            oled_set_pixel(right, y, true);
         }
     }
 
-    for (int yy = y; yy < (y + h); yy++)
+    for (int i = 0; i < 4; i++)
     {
-        if (((yy + (int)frame) & 0x01) == 0)
+        const int y = sweep + i;
+        if (y >= top && y < (top + height))
         {
-            oled_set_pixel(x, yy, true);
-            oled_set_pixel(x + w - 1, yy, true);
+            oled_set_pixel(left, y, true);
+            oled_set_pixel(right, y, true);
+
+            if (i == 1 || i == 2)
+            {
+                oled_set_pixel(left + 1, y, true);
+                oled_set_pixel(right - 1, y, true);
+            }
         }
+    }
+}
+
+static void draw_orbit_dots(int x0, int y0, int text_width, int text_height, uint32_t frame)
+{
+    const int cx = x0 + (text_width / 2);
+    const int cy = y0 + (text_height / 2);
+    const int rx = (text_width / 2) + 6;
+    const int ry = (text_height / 2) + 4;
+
+    const int p1x = cx + tri_wave((int)frame * 2, 96, rx);
+    const int p1y = cy + tri_wave((int)frame * 3, 72, ry);
+    const int p2x = cx + tri_wave(((int)frame * 2) + 48, 96, rx - 2);
+    const int p2y = cy + tri_wave(((int)frame * 3) + 36, 72, ry - 2);
+
+    oled_set_pixel(p1x, p1y, true);
+    oled_set_pixel(p2x, p2y, true);
+    if ((frame & 0x01) == 0)
+    {
+        oled_set_pixel(p1x + 1, p1y, true);
+        oled_set_pixel(p2x - 1, p2y, true);
     }
 }
 
@@ -129,7 +216,7 @@ static const uint8_t *font_rows_for_char(char ch)
     return s_font_table[1].rows; // fallback: 'B'
 }
 
-static void draw_glyph_scaled(int x, int y, char ch, int reveal_x, int shine_x, uint32_t frame)
+static void draw_glyph_scaled(int x, int y, char ch, int reveal_x, int scan_x, bool pulse_on, uint32_t frame)
 {
     const uint8_t *rows = font_rows_for_char(ch);
 
@@ -145,12 +232,12 @@ static void draw_glyph_scaled(int x, int y, char ch, int reveal_x, int shine_x, 
                 continue;
             }
 
-            const int start_x = x + (col * FONT_SCALE);
-            const int start_y = y + (row * FONT_SCALE);
+            const int start_x = x + (col * FONT_SCALE_X);
+            const int start_y = y + (row * FONT_SCALE_Y);
 
-            for (int dy = 0; dy < FONT_SCALE; dy++)
+            for (int dy = 0; dy < FONT_SCALE_Y; dy++)
             {
-                for (int dx = 0; dx < FONT_SCALE; dx++)
+                for (int dx = 0; dx < FONT_SCALE_X; dx++)
                 {
                     const int px = start_x + dx;
                     const int py = start_y + dy;
@@ -162,10 +249,18 @@ static void draw_glyph_scaled(int x, int y, char ch, int reveal_x, int shine_x, 
 
                     oled_set_pixel(px, py, true);
 
-                    if (px >= shine_x && px < (shine_x + 3) &&
+                    if (px >= scan_x && px < (scan_x + 2) &&
                         ((px + py + (int)frame) & 0x01) == 0)
                     {
                         oled_set_pixel(px, py - 1, true);
+                        oled_set_pixel(px, py + 1, true);
+                    }
+
+                    if (pulse_on &&
+                        (dx == 0 || dx == (FONT_SCALE_X - 1) || dy == 0 || dy == (FONT_SCALE_Y - 1)) &&
+                        ((px + py + (int)frame) % 19) == 0)
+                    {
+                        oled_set_pixel(px + 1, py, true);
                     }
                 }
             }
@@ -179,7 +274,7 @@ static int text_width_px(const char *text)
 
     for (const char *c = text; *c != '\0'; c++)
     {
-        width += FONT_WIDTH * FONT_SCALE;
+        width += FONT_WIDTH * FONT_SCALE_X;
         if (*(c + 1) != '\0')
         {
             width += FONT_SPACING;
@@ -189,112 +284,99 @@ static int text_width_px(const char *text)
     return width;
 }
 
-static void draw_twinkles(uint32_t frame)
+static void draw_typing_cursor(int x, int y, int h, uint32_t frame)
 {
-    for (size_t i = 0; i < (sizeof(s_twinkles) / sizeof(s_twinkles[0])); i++)
+    if ((frame % ANIM_LETTER_STEP_FRAMES) >= ANIM_CURSOR_ON_FRAMES)
     {
-        const twinkle_t *star = &s_twinkles[i];
-        const uint32_t phase = (frame / star->speed) + (uint32_t)(i * 3U);
-        const uint8_t blink = (uint8_t)(phase % 24U);
-
-        if (blink < star->duty)
-        {
-            oled_set_pixel(star->x, star->y, true);
-            if (blink == 0)
-            {
-                oled_set_pixel(star->x - 1, star->y, true);
-                oled_set_pixel(star->x + 1, star->y, true);
-                oled_set_pixel(star->x, star->y - 1, true);
-                oled_set_pixel(star->x, star->y + 1, true);
-            }
-        }
-    }
-}
-
-static void draw_reveal_cursor(int x, int y, int h, uint32_t frame)
-{
-    for (int yy = y - 2; yy < (y + h + 2); yy++)
-    {
-        if (((yy + (int)frame) & 0x01) == 0)
-        {
-            oled_set_pixel(x, yy, true);
-        }
+        return;
     }
 
-    oled_set_pixel(x - 1, y - 3, true);
-    oled_set_pixel(x, y - 3, true);
-    oled_set_pixel(x + 1, y - 3, true);
-    oled_set_pixel(x - 1, y + h + 2, true);
-    oled_set_pixel(x, y + h + 2, true);
-    oled_set_pixel(x + 1, y + h + 2, true);
-}
-
-static void draw_underline(int x, int width, int y, uint32_t frame)
-{
-    const int comet = (x - 6) + (int)((frame % 64U) * (uint32_t)(width + 12) / 64U);
-
-    for (int xx = x - 2; xx < (x + width + 2); xx++)
+    for (int yy = y - 1; yy < (y + h + 1); yy++)
     {
-        if (((xx + (int)frame) & 0x03) == 0)
-        {
-            oled_set_pixel(xx, y, true);
-        }
-
-        int dist = xx - comet;
-        if (dist < 0)
-        {
-            dist = -dist;
-        }
-
-        if (dist <= 2)
-        {
-            oled_set_pixel(xx, y - 1, true);
-            if (dist == 0)
-            {
-                oled_set_pixel(xx, y - 2, true);
-            }
-        }
+        oled_set_pixel(x, yy, true);
+        oled_set_pixel(x + 1, yy, true);
     }
 }
 
 static void render_logo_frame(uint32_t frame)
 {
     memset(s_framebuffer, 0, sizeof(s_framebuffer));
-    draw_twinkles(frame);
-
     const int text_width = text_width_px(OLED_TEXT);
-    const int text_height = FONT_HEIGHT * FONT_SCALE;
+    const int text_height = FONT_HEIGHT * FONT_SCALE_Y;
+    const int text_len = (int)strlen(OLED_TEXT);
     const int x0 = (OLED_WIDTH - text_width) / 2;
-    const int y0 = ((OLED_HEIGHT - text_height) / 2) - 2;
+    const int y0 = (OLED_HEIGHT - text_height) / 2;
+    const int reveal_window = text_len * ANIM_LETTER_STEP_FRAMES;
+    const int cycle_frames = reveal_window + ANIM_POST_REVEAL_FRAMES;
+    const int cycle_frame = (int)(frame % (uint32_t)cycle_frames);
+    int visible_letters = cycle_frame / ANIM_LETTER_STEP_FRAMES;
+    const int letter_progress = cycle_frame % ANIM_LETTER_STEP_FRAMES;
+    const bool typing_phase = visible_letters < text_len;
+    int scan_x = x0 - 8;
+    bool pulse_on = true;
 
-    const int cycle_frame = (int)(frame % ANIM_CYCLE_FRAMES);
-    int reveal_x = x0 + text_width + 4;
-
-    if (cycle_frame < ANIM_REVEAL_FRAMES)
+    if (visible_letters > text_len)
     {
-        reveal_x = (x0 - 6) + ((text_width + 12) * cycle_frame / ANIM_REVEAL_FRAMES);
-        draw_reveal_cursor(reveal_x + 1, y0, text_height, frame);
+        visible_letters = text_len;
     }
 
-    const int shine_period = 76;
-    const int shine_progress = (int)(frame % (uint32_t)shine_period);
-    const int shine_x = (x0 - 14) + ((text_width + 28) * shine_progress / shine_period);
+    if (typing_phase)
+    {
+        scan_x = x0 + (visible_letters * ((FONT_WIDTH * FONT_SCALE_X) + FONT_SPACING));
+        pulse_on = ((letter_progress & 0x01) == 0);
+    }
+    else
+    {
+        const int post_frame = cycle_frame - reveal_window;
+        const int scan_period = 72;
+        scan_x = (x0 - 8) + ((text_width + 16) * (post_frame % scan_period) / scan_period);
+        pulse_on = (((post_frame / 10) & 0x01) == 0);
+    }
+
+    draw_subtle_stars(x0, y0, text_width, text_height, frame);
+    draw_side_beacons(x0, y0, text_width, text_height, frame);
+    if (!typing_phase)
+    {
+        draw_orbit_dots(x0, y0, text_width, text_height, frame);
+    }
 
     int cursor_x = x0;
-    for (const char *c = OLED_TEXT; *c != '\0'; c++)
+    for (int i = 0; i < text_len; i++)
     {
-        draw_glyph_scaled(cursor_x, y0, *c, reveal_x, shine_x, frame);
-        cursor_x += (FONT_WIDTH * FONT_SCALE) + FONT_SPACING;
+        int reveal_x = cursor_x - 1;
+
+        if (i < visible_letters)
+        {
+            reveal_x = cursor_x + (FONT_WIDTH * FONT_SCALE_X);
+        }
+        else if (i == visible_letters && typing_phase)
+        {
+            int revealed_cols = ((letter_progress + 1) * FONT_WIDTH) / ANIM_LETTER_STEP_FRAMES;
+            if (revealed_cols > FONT_WIDTH)
+            {
+                revealed_cols = FONT_WIDTH;
+            }
+            reveal_x = cursor_x + (revealed_cols * FONT_SCALE_X) - 1;
+        }
+
+        draw_glyph_scaled(cursor_x, y0, OLED_TEXT[i], reveal_x, scan_x, pulse_on, frame);
+        cursor_x += (FONT_WIDTH * FONT_SCALE_X) + FONT_SPACING;
     }
 
-    if (((cycle_frame / 10) % 2) == 0)
+    if (typing_phase)
     {
-        oled_draw_rect_dotted(x0 - 4, y0 - 4, text_width + 8, text_height + 8, frame);
-    }
+        const int cursor_letter_x = x0 + (visible_letters * ((FONT_WIDTH * FONT_SCALE_X) + FONT_SPACING));
+        int revealed_cols = ((letter_progress + 1) * FONT_WIDTH) / ANIM_LETTER_STEP_FRAMES;
+        if (revealed_cols > FONT_WIDTH)
+        {
+            revealed_cols = FONT_WIDTH;
+        }
+        const int typing_cursor_x = cursor_letter_x + (revealed_cols * FONT_SCALE_X);
 
-    if (cycle_frame >= ANIM_REVEAL_FRAMES)
-    {
-        draw_underline(x0, text_width, y0 + text_height + 5, frame);
+        if (typing_cursor_x < (x0 + text_width + 3))
+        {
+            draw_typing_cursor(typing_cursor_x, y0, text_height, frame);
+        }
     }
 }
 
