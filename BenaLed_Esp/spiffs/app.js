@@ -31,6 +31,8 @@ const mediaBtn = document.getElementById("mediaBtn");
 const mediaInput = document.getElementById("mediaInput");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const mediaPlaybackBtn = document.getElementById("mediaPlaybackBtn");
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
 
 let activeVideoElement = null;
 let activeVideoUrl = null;
@@ -69,6 +71,11 @@ const GIF_EASTER_EGG_PATHS = [
   "/spfc.gif"
 ];
 let frame = createEmptyFrame();
+const MAX_HISTORY_STEPS = 120;
+const undoHistory = [];
+const redoHistory = [];
+let strokeStartSnapshot = null;
+let strokeHadChanges = false;
 
 function createEmptyFrame() {
   return Array.from({ length: GRID_SIZE }, () =>
@@ -78,6 +85,95 @@ function createEmptyFrame() {
 
 function cloneFrame(source) {
   return source.map((row) => [...row]);
+}
+
+function framesAreEqual(firstFrame, secondFrame) {
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      if (firstFrame[y][x] !== secondFrame[y][x]) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function pushHistorySnapshot(stack, snapshot) {
+  stack.push(snapshot);
+
+  if (stack.length > MAX_HISTORY_STEPS) {
+    stack.shift();
+  }
+}
+
+function updateHistoryButtons() {
+  const canUndo = undoHistory.length > 0;
+  const canRedo = redoHistory.length > 0;
+
+  if (undoBtn) {
+    undoBtn.disabled = !canUndo;
+    undoBtn.setAttribute("aria-disabled", String(!canUndo));
+  }
+
+  if (redoBtn) {
+    redoBtn.disabled = !canRedo;
+    redoBtn.setAttribute("aria-disabled", String(!canRedo));
+  }
+}
+
+function beginStrokeHistory() {
+  strokeStartSnapshot = cloneFrame(frame);
+  strokeHadChanges = false;
+}
+
+function commitStrokeHistory() {
+  if (!strokeStartSnapshot) return;
+
+  if (strokeHadChanges && !framesAreEqual(strokeStartSnapshot, frame)) {
+    pushHistorySnapshot(undoHistory, strokeStartSnapshot);
+    redoHistory.length = 0;
+  }
+
+  strokeStartSnapshot = null;
+  strokeHadChanges = false;
+  updateHistoryButtons();
+}
+
+function applyFrameWithHistory(nextFrame) {
+  if (framesAreEqual(frame, nextFrame)) {
+    return false;
+  }
+
+  pushHistorySnapshot(undoHistory, cloneFrame(frame));
+  redoHistory.length = 0;
+  frame = cloneFrame(nextFrame);
+  render();
+  scheduleConsoleExport();
+  updateHistoryButtons();
+  return true;
+}
+
+function undoLastAction() {
+  if (!undoHistory.length) return;
+
+  stopActiveMediaPlayback();
+  pushHistorySnapshot(redoHistory, cloneFrame(frame));
+  frame = undoHistory.pop();
+  render();
+  scheduleConsoleExport();
+  updateHistoryButtons();
+}
+
+function redoLastAction() {
+  if (!redoHistory.length) return;
+
+  stopActiveMediaPlayback();
+  pushHistorySnapshot(undoHistory, cloneFrame(frame));
+  frame = redoHistory.pop();
+  render();
+  scheduleConsoleExport();
+  updateHistoryButtons();
 }
 
 function getFullscreenElement() {
@@ -394,14 +490,14 @@ function updateToolbarUi() {
   });
 
   if (paintMode === "eraser") {
-    currentColorLabel.textContent = "Borracha";
+    currentColorLabel.textContent = "Apagar";
     currentColorPreview.style.background =
       "repeating-linear-gradient(135deg, #2a3442 0 8px, #0d1523 8px 16px)";
     return;
   }
 
   if (paintMode === "rainbow") {
-    currentColorLabel.textContent = "Rainbow";
+    currentColorLabel.textContent = "Colorido";
     currentColorPreview.style.background =
       "conic-gradient(#ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #0a84ff, #5e5ce6, #bf5af2, #ff2d55, #ff3b30)";
     return;
@@ -837,9 +933,7 @@ async function loadImageFileToFrame(file) {
     const previewCanvas = buildImportPreviewCanvas(img);
     const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
 
-    frame = convertedFrame;
-    render();
-    scheduleConsoleExport();
+    applyFrameWithHistory(convertedFrame);
   } catch (error) {
     console.error(error);
     alert("Não foi possível carregar a imagem selecionada.");
@@ -881,9 +975,7 @@ async function loadImageFileToFrame(file) {
     const previewCanvas = buildImportPreviewCanvas(img);
     const convertedFrame = samplePreviewCanvasToFrame(previewCanvas);
 
-    frame = convertedFrame;
-    render();
-    scheduleConsoleExport();
+    applyFrameWithHistory(convertedFrame);
   } catch (error) {
     console.error(error);
     alert("Não foi possível carregar a imagem selecionada.");
@@ -1291,66 +1383,88 @@ function getCellFromEvent(event) {
 }
 
 function paintCell(x, y, color) {
-  frame[y][x] = color;
+  const normalizedColor = color.toLowerCase();
+
+  if (frame[y][x] === normalizedColor) {
+    return false;
+  }
+
+  frame[y][x] = normalizedColor;
   scheduleConsoleExport();
+  return true;
 }
 
 function paintUsingActiveMode(x, y) {
-  paintCell(x, y, getCurrentPaintColor());
+  return paintCell(x, y, getCurrentPaintColor());
 }
 
 function drawInterpolatedLine(x0, y0, x1, y1) {
   const dx = x1 - x0;
   const dy = y1 - y0;
   const steps = Math.max(Math.abs(dx), Math.abs(dy));
+  let lineHadChanges = false;
 
   if (steps === 0) {
-    paintUsingActiveMode(x0, y0);
-    return;
+    return paintUsingActiveMode(x0, y0);
   }
 
   for (let i = 0; i <= steps; i++) {
     const x = Math.round(x0 + (dx * i) / steps);
     const y = Math.round(y0 + (dy * i) / steps);
-    paintUsingActiveMode(x, y);
+
+    if (paintUsingActiveMode(x, y)) {
+      lineHadChanges = true;
+    }
   }
+
+  return lineHadChanges;
 }
 
 function drawFromEvent(event) {
   const cell = getCellFromEvent(event);
-  if (!cell) return;
+  if (!cell) return false;
+
+  let didChange = false;
 
   if (lastPaintedCell) {
-    drawInterpolatedLine(
+    didChange = drawInterpolatedLine(
       lastPaintedCell.x,
       lastPaintedCell.y,
       cell.x,
       cell.y
     );
   } else {
-    paintUsingActiveMode(cell.x, cell.y);
+    didChange = paintUsingActiveMode(cell.x, cell.y);
+  }
+
+  if (didChange) {
+    strokeHadChanges = true;
+    scheduleRender();
   }
 
   lastPaintedCell = cell;
-  scheduleRender();
+  return didChange;
 }
 
 function processPointerEvent(event) {
   const events = typeof event.getCoalescedEvents === "function"
     ? event.getCoalescedEvents()
     : [event];
+  let hadChanges = false;
 
   for (const pointerEvent of events) {
-    drawFromEvent(pointerEvent);
+    if (drawFromEvent(pointerEvent)) {
+      hadChanges = true;
+    }
   }
+
+  return hadChanges;
 }
 
 function clearFrame() {
   stopActiveVideoPlayback();
   stopActiveGifPlayback();
-  frame = createEmptyFrame();
-  render();
-  scheduleConsoleExport();
+  applyFrameWithHistory(createEmptyFrame());
 }
 
 function setPixelSafe(targetFrame, x, y, color) {
@@ -1431,9 +1545,7 @@ function applyPreset(name) {
 
   const newFrame = getPresetFrameByName(name);
 
-  frame = cloneFrame(newFrame);
-  render();
-  scheduleConsoleExport();
+  applyFrameWithHistory(newFrame);
   closeModal(presetModal);
 }
 
@@ -1873,6 +1985,7 @@ function stopDrawing(event) {
 
   isDrawing = false;
   lastPaintedCell = null;
+  commitStrokeHistory();
 }
 
 canvas.addEventListener("pointerdown", (event) => {
@@ -1882,6 +1995,7 @@ canvas.addEventListener("pointerdown", (event) => {
 
   isDrawing = true;
   lastPaintedCell = null;
+  beginStrokeHistory();
 
   if (typeof canvas.setPointerCapture === "function") {
     try {
@@ -1909,15 +2023,30 @@ canvas.addEventListener("pointercancel", (event) => {
 });
 
 canvas.addEventListener("click", (event) => {
+  if ("PointerEvent" in window) return;
+
   event.preventDefault();
   stopActiveMediaPlayback();
-  drawFromEvent(event);
+
+  const beforeClickSnapshot = cloneFrame(frame);
+
+  lastPaintedCell = null;
+  const didChange = drawFromEvent(event);
+  lastPaintedCell = null;
+
+  if (didChange && !framesAreEqual(beforeClickSnapshot, frame)) {
+    pushHistorySnapshot(undoHistory, beforeClickSnapshot);
+    redoHistory.length = 0;
+    updateHistoryButtons();
+  }
+
   render();
 });
 
 canvas.addEventListener("lostpointercapture", () => {
   isDrawing = false;
   lastPaintedCell = null;
+  commitStrokeHistory();
 });
 
 clearBtn.addEventListener("click", clearFrame);
@@ -1940,6 +2069,20 @@ if (mediaPlaybackBtn) {
   mediaPlaybackBtn.addEventListener("click", (event) => {
     event.preventDefault();
     toggleActiveMediaPlayback();
+  });
+}
+
+if (undoBtn) {
+  undoBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    undoLastAction();
+  });
+}
+
+if (redoBtn) {
+  redoBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    redoLastAction();
   });
 }
 
@@ -2169,6 +2312,7 @@ render();
 setSelectedColor(selectedColor);
 updateFullscreenButton();
 updateMediaPlaybackButton();
+updateHistoryButtons();
 
 requestAnimationFrame(() => {
   connectMatrixWebSocket();

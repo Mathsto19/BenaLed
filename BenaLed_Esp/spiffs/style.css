@@ -289,9 +289,45 @@ body {
     box-shadow 0.18s ease;
 }
 
+.mode-group .tool-btn {
+  padding: 10px 12px;
+  font-size: 0.92rem;
+}
+
+.mode-group {
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mode-group::-webkit-scrollbar {
+  display: none;
+}
+
+.tool-btn:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
 .tool-btn:hover {
   transform: translateY(-1px);
   border-color: rgba(0, 229, 255, 0.26);
+}
+
+.tool-btn:disabled:hover {
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.04);
 }
 
 .tool-btn.is-active {
@@ -313,6 +349,44 @@ body {
       rgba(10, 132, 255, 0.18),
       rgba(191, 90, 242, 0.18));
   box-shadow: 0 0 18px rgba(255, 255, 255, 0.08);
+}
+
+.history-group {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.icon-tool-btn {
+  width: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.history-btn {
+  color: #dff6ff;
+}
+
+.history-btn:not(:disabled):hover {
+  border-color: rgba(0, 229, 255, 0.34);
+  background:
+    linear-gradient(180deg, rgba(0, 229, 255, 0.16), rgba(255, 255, 255, 0.03)),
+    rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.14);
+}
+
+.history-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .inline-palette {
@@ -420,8 +494,39 @@ body {
 /* Celular */
 @media (max-width: 740px) {
   .paint-toolbar {
-    align-items: flex-start;
-    padding: 12px;
+    align-items: center;
+    padding: 13px 12px 12px;
+  }
+
+  .mode-group {
+    gap: 5px;
+    width: 100%;
+    justify-content: center;
+    align-items: center;
+    overflow-y: visible;
+    padding-top: 3px;
+    padding-bottom: 2px;
+  }
+
+  .mode-group .tool-btn {
+    min-height: 42px;
+    padding: 9px 10px;
+    font-size: 0.87rem;
+  }
+
+  .history-group {
+    gap: 4px;
+  }
+
+  .icon-tool-btn {
+    width: 38px;
+    min-width: 38px;
+    min-height: 42px;
+  }
+
+  .history-icon {
+    width: 17px;
+    height: 17px;
   }
 
   .color-wheel-picker {
@@ -1302,6 +1407,22 @@ body {
     font-size: 0.82rem;
   }
 
+  .mode-group .tool-btn {
+    padding: 7px 9px;
+    font-size: 0.78rem;
+  }
+
+  .icon-tool-btn {
+    width: 34px;
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .history-icon {
+    width: 16px;
+    height: 16px;
+  }
+
   .inline-palette {
     gap: 6px;
   }
@@ -1589,6 +1710,22 @@ body {
     font-size: 0.8rem !important;
   }
 
+  .mode-group .tool-btn {
+    padding: 7px 9px !important;
+    font-size: 0.76rem !important;
+  }
+
+  .icon-tool-btn {
+    width: 34px !important;
+    min-width: 34px !important;
+    min-height: 34px !important;
+  }
+
+  .history-icon {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
   .inline-palette {
     gap: 6px !important;
   }
@@ -1691,9 +1828,59 @@ body {
 
   .paint-toolbar {
     margin-top: 8px !important;
-    padding: 8px 10px !important;
+    padding: 10px 10px 9px !important;
     gap: 8px !important;
     border-radius: 14px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+  }
+
+  .mode-group {
+    gap: 5px !important;
+    width: auto !important;
+    justify-content: center !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    flex: 0 0 auto !important;
+    overflow-y: visible !important;
+    padding-top: 3px !important;
+    padding-bottom: 2px !important;
+  }
+
+  .mode-group .tool-btn {
+    min-height: 38px !important;
+    padding: 7px 9px !important;
+    font-size: 0.8rem !important;
+  }
+
+  .history-group {
+    gap: 4px !important;
+  }
+
+  .inline-palette {
+    flex-wrap: nowrap !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+  }
+
+  .paint-toolbar::-webkit-scrollbar,
+  .mode-group::-webkit-scrollbar,
+  .inline-palette::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .icon-tool-btn {
+    width: 34px !important;
+    min-width: 34px !important;
+    min-height: 38px !important;
+  }
+
+  .history-icon {
+    width: 16px !important;
+    height: 16px !important;
   }
 
   .controls {

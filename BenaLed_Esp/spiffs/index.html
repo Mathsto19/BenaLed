@@ -97,8 +97,38 @@
       <div id="paintToolbar" class="paint-toolbar is-hidden">
         <div class="tool-group mode-group">
           <button type="button" class="tool-btn is-active" data-mode="paint">Pintar</button>
-          <button type="button" class="tool-btn" data-mode="eraser">Borracha</button>
-          <button type="button" class="tool-btn rainbow-tool" data-mode="rainbow">Rainbow</button>
+          <button type="button" class="tool-btn" data-mode="eraser">Apagar</button>
+          <button type="button" class="tool-btn rainbow-tool" data-mode="rainbow">Colorido</button>
+
+          <div class="tool-group history-group" role="group" aria-label="Historico do desenho">
+            <button
+              id="undoBtn"
+              type="button"
+              class="tool-btn icon-tool-btn history-btn"
+              aria-label="Voltar acao"
+              title="Voltar"
+              disabled
+            >
+              <svg class="history-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M20 12H6" />
+                <path d="M11 7 6 12l5 5" />
+              </svg>
+            </button>
+
+            <button
+              id="redoBtn"
+              type="button"
+              class="tool-btn icon-tool-btn history-btn"
+              aria-label="Avancar acao"
+              title="Avancar"
+              disabled
+            >
+              <svg class="history-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M4 12h14" />
+                <path d="m13 7 5 5-5 5" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="tool-group inline-palette">
