@@ -3,6 +3,7 @@
 #include "matrix_task.h"
 #include "sdkconfig.h"
 #include "esp_timer.h"
+#include "esp_wifi_ap_get_sta_list.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,18 +16,21 @@
 #endif
 
 #define ADMIN_URI "/admin"
+#define QUEUE_STATUS_URI "/queue-status"
 #define ADMIN_PASSWORD "1925"
 #define ADMIN_AUTH_REALM "BenaLed Admin"
 #define ADMIN_AUTH_MAX_LEN 200
 #define ADMIN_BASIC_DECODED_MAX 96
 #define ADMIN_POST_BODY_MAX 384
 #define ADMIN_USER_ID_MAX_LEN 46
-#define ADMIN_QUEUE_CAPACITY 24
-#define ADMIN_JSON_MAX 4096
+#define ADMIN_QUEUE_CAPACITY ((WIFI_AP_MAX_CONN > 0) ? WIFI_AP_MAX_CONN : 1)
+#define ADMIN_JSON_MAX 1536
+#define QUEUE_STATUS_JSON_MAX 512
 
 typedef struct
 {
     bool queue_mode_enabled;
+    oled_mode_t oled_mode;
     bool rotation_paused;
     uint16_t default_turn_sec;
     uint16_t min_turn_sec;
@@ -35,11 +39,13 @@ typedef struct
     size_t queue_len;
     char queue_users[ADMIN_QUEUE_CAPACITY][ADMIN_USER_ID_MAX_LEN];
     uint64_t turn_started_us;
+    uint64_t pause_started_us;
 } admin_state_t;
 
 typedef struct
 {
     bool queue_mode_enabled;
+    oled_mode_t oled_mode;
     bool rotation_paused;
     uint16_t default_turn_sec;
     uint16_t min_turn_sec;
@@ -47,10 +53,12 @@ typedef struct
     uint16_t max_users;
     size_t queue_len;
     char queue_users[ADMIN_QUEUE_CAPACITY][ADMIN_USER_ID_MAX_LEN];
+    uint64_t turn_started_us;
 } admin_state_snapshot_t;
 
 static admin_state_t s_admin_state = {
     .queue_mode_enabled = false,
+    .oled_mode = OLED_MODE_TECHNICAL,
     .rotation_paused = false,
     .default_turn_sec = 30,
     .min_turn_sec = 10,
@@ -58,6 +66,7 @@ static admin_state_t s_admin_state = {
     .max_users = (WIFI_AP_MAX_CONN > 0) ? WIFI_AP_MAX_CONN : 1,
     .queue_len = 0,
     .turn_started_us = 0,
+    .pause_started_us = 0,
 };
 static portMUX_TYPE s_admin_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -137,6 +146,77 @@ static esp_err_t parse_legacy_text_matrix_to_rgb(const uint8_t *payload, size_t 
     return ESP_OK;
 }
 
+static bool admin_extract_ipv4_mapped_from_ipv6(const struct in6_addr *ipv6_addr, struct in_addr *out_ipv4_addr)
+{
+    if (ipv6_addr == NULL || out_ipv4_addr == NULL)
+    {
+        return false;
+    }
+
+    const uint8_t *bytes = (const uint8_t *)ipv6_addr;
+    for (size_t i = 0; i < 10; i++)
+    {
+        if (bytes[i] != 0)
+        {
+            return false;
+        }
+    }
+
+    bool is_v4_mapped = (bytes[10] == 0xFFU && bytes[11] == 0xFFU);
+    if (!is_v4_mapped)
+    {
+        return false;
+    }
+
+    memcpy(&out_ipv4_addr->s_addr, bytes + 12, sizeof(out_ipv4_addr->s_addr));
+    return out_ipv4_addr->s_addr != 0;
+}
+
+static bool admin_parse_ipv4_from_user_id(const char *user_id, struct in_addr *out_ipv4_addr)
+{
+    if (user_id == NULL || user_id[0] == '\0' || out_ipv4_addr == NULL)
+    {
+        return false;
+    }
+
+    if (inet_pton(AF_INET, user_id, out_ipv4_addr) == 1)
+    {
+        return true;
+    }
+
+    struct in6_addr parsed_ipv6 = {0};
+    if (inet_pton(AF_INET6, user_id, &parsed_ipv6) == 1)
+    {
+        return admin_extract_ipv4_mapped_from_ipv6(&parsed_ipv6, out_ipv4_addr);
+    }
+
+    return false;
+}
+
+static bool admin_user_ids_equal(const char *left_user_id, const char *right_user_id)
+{
+    if (left_user_id == NULL || right_user_id == NULL ||
+        left_user_id[0] == '\0' || right_user_id[0] == '\0')
+    {
+        return false;
+    }
+
+    if (strcmp(left_user_id, right_user_id) == 0)
+    {
+        return true;
+    }
+
+    struct in_addr left_ipv4 = {0};
+    struct in_addr right_ipv4 = {0};
+    if (admin_parse_ipv4_from_user_id(left_user_id, &left_ipv4) &&
+        admin_parse_ipv4_from_user_id(right_user_id, &right_ipv4))
+    {
+        return left_ipv4.s_addr == right_ipv4.s_addr;
+    }
+
+    return false;
+}
+
 static size_t admin_effective_max_users_locked(void)
 {
     size_t connection_cap = WIFI_AP_MAX_CONN;
@@ -181,6 +261,7 @@ static void admin_trim_queue_locked(void)
     if (s_admin_state.queue_len == 0)
     {
         s_admin_state.turn_started_us = 0;
+        s_admin_state.pause_started_us = 0;
     }
 }
 
@@ -263,13 +344,120 @@ static int admin_find_user_index_locked(const char *user_id)
 
     for (size_t i = 0; i < s_admin_state.queue_len; i++)
     {
-        if (strcmp(s_admin_state.queue_users[i], user_id) == 0)
+        if (admin_user_ids_equal(s_admin_state.queue_users[i], user_id))
         {
             return (int)i;
         }
     }
 
     return -1;
+}
+
+static bool admin_collect_connected_user_ids(char out_ids[][ADMIN_USER_ID_MAX_LEN], size_t max_ids, size_t *out_count)
+{
+    if (out_count == NULL)
+    {
+        return false;
+    }
+
+    *out_count = 0;
+    if (out_ids == NULL || max_ids == 0)
+    {
+        return false;
+    }
+
+    wifi_sta_list_t sta_list = {0};
+    if (esp_wifi_ap_get_sta_list(&sta_list) != ESP_OK)
+    {
+        return false;
+    }
+
+    wifi_sta_mac_ip_list_t sta_ip_list = {0};
+    if (esp_wifi_ap_get_sta_list_with_ip(&sta_list, &sta_ip_list) != ESP_OK)
+    {
+        return false;
+    }
+
+    size_t count = 0;
+    for (int i = 0; i < sta_ip_list.num && count < max_ids; i++)
+    {
+        struct in_addr ip_addr = {
+            .s_addr = sta_ip_list.sta[i].ip.addr,
+        };
+
+        if (ip_addr.s_addr == 0)
+        {
+            continue;
+        }
+
+        if (inet_ntop(AF_INET, &ip_addr, out_ids[count], ADMIN_USER_ID_MAX_LEN) != NULL)
+        {
+            count++;
+        }
+    }
+
+    *out_count = count;
+    return true;
+}
+
+static bool admin_id_in_connected_list(const char *user_id, const char connected_ids[][ADMIN_USER_ID_MAX_LEN], size_t connected_count)
+{
+    if (user_id == NULL || user_id[0] == '\0' || connected_ids == NULL)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < connected_count; i++)
+    {
+        if (admin_user_ids_equal(user_id, connected_ids[i]))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void admin_prune_disconnected_users_locked(const char connected_ids[][ADMIN_USER_ID_MAX_LEN], size_t connected_count, uint64_t now_us)
+{
+    if (connected_ids == NULL || s_admin_state.queue_len == 0)
+    {
+        return;
+    }
+
+    size_t write_index = 0;
+    for (size_t read_index = 0; read_index < s_admin_state.queue_len; read_index++)
+    {
+        const char *user_id = s_admin_state.queue_users[read_index];
+        if (!admin_id_in_connected_list(user_id, connected_ids, connected_count))
+        {
+            continue;
+        }
+
+        if (write_index != read_index)
+        {
+            strlcpy(s_admin_state.queue_users[write_index], user_id, ADMIN_USER_ID_MAX_LEN);
+        }
+        write_index++;
+    }
+
+    for (size_t i = write_index; i < s_admin_state.queue_len; i++)
+    {
+        s_admin_state.queue_users[i][0] = '\0';
+    }
+
+    s_admin_state.queue_len = write_index;
+    if (s_admin_state.queue_len == 0)
+    {
+        s_admin_state.turn_started_us = 0;
+        s_admin_state.pause_started_us = 0;
+        return;
+    }
+
+    if (s_admin_state.turn_started_us == 0)
+    {
+        s_admin_state.turn_started_us = now_us;
+    }
 }
 
 static void admin_rotate_queue_once_locked(void)
@@ -295,18 +483,37 @@ static void admin_refresh_rotation_locked(uint64_t now_us)
     if (s_admin_state.queue_len == 0)
     {
         s_admin_state.turn_started_us = 0;
+        s_admin_state.pause_started_us = 0;
         return;
     }
 
     if (s_admin_state.turn_started_us == 0)
     {
         s_admin_state.turn_started_us = now_us;
+    }
+
+    if (!s_admin_state.queue_mode_enabled)
+    {
+        s_admin_state.pause_started_us = 0;
         return;
     }
 
-    if (!s_admin_state.queue_mode_enabled || s_admin_state.rotation_paused || s_admin_state.queue_len <= 1)
+    if (s_admin_state.rotation_paused)
     {
+        if (s_admin_state.pause_started_us == 0)
+        {
+            s_admin_state.pause_started_us = now_us;
+        }
         return;
+    }
+
+    if (s_admin_state.pause_started_us > 0)
+    {
+        if (now_us > s_admin_state.pause_started_us)
+        {
+            s_admin_state.turn_started_us += (now_us - s_admin_state.pause_started_us);
+        }
+        s_admin_state.pause_started_us = 0;
     }
 
     uint64_t turn_duration_us = (uint64_t)s_admin_state.default_turn_sec * 1000000ULL;
@@ -330,6 +537,62 @@ static void admin_refresh_rotation_locked(uint64_t now_us)
     }
 
     s_admin_state.turn_started_us = now_us - (elapsed_us % turn_duration_us);
+}
+
+static void admin_compute_turn_remaining(uint64_t now_us,
+                                         bool queue_mode_enabled,
+                                         bool rotation_paused,
+                                         size_t queue_count,
+                                         uint16_t default_turn_sec,
+                                         uint64_t turn_started_us,
+                                         uint16_t *out_turn_remaining_sec,
+                                         bool *out_has_active_turn)
+{
+    if (out_turn_remaining_sec != NULL)
+    {
+        *out_turn_remaining_sec = 0;
+    }
+    if (out_has_active_turn != NULL)
+    {
+        *out_has_active_turn = false;
+    }
+
+    if (!queue_mode_enabled ||
+        rotation_paused ||
+        queue_count == 0 ||
+        default_turn_sec == 0 ||
+        turn_started_us == 0)
+    {
+        return;
+    }
+
+    uint64_t turn_duration_us = (uint64_t)default_turn_sec * 1000000ULL;
+    if (turn_duration_us == 0)
+    {
+        return;
+    }
+
+    uint64_t elapsed_us = now_us - turn_started_us;
+    if (elapsed_us >= turn_duration_us)
+    {
+        elapsed_us = turn_duration_us - 1;
+    }
+
+    uint64_t remaining_us = turn_duration_us - elapsed_us;
+    uint16_t remaining_sec = (uint16_t)((remaining_us + 999999ULL) / 1000000ULL);
+    if (remaining_sec == 0)
+    {
+        remaining_sec = 1;
+    }
+
+    if (out_turn_remaining_sec != NULL)
+    {
+        *out_turn_remaining_sec = remaining_sec;
+    }
+    if (out_has_active_turn != NULL)
+    {
+        *out_has_active_turn = true;
+    }
 }
 
 static bool admin_append_json_raw(char *json, size_t json_size, size_t *offset, const char *raw)
@@ -436,17 +699,26 @@ static void admin_copy_snapshot(admin_state_snapshot_t *snapshot)
     }
 
     uint64_t now_us = (uint64_t)esp_timer_get_time();
+    char connected_ids[ADMIN_QUEUE_CAPACITY][ADMIN_USER_ID_MAX_LEN] = {{0}};
+    size_t connected_count = 0;
+    bool has_connected_ids = admin_collect_connected_user_ids(connected_ids, ADMIN_QUEUE_CAPACITY, &connected_count);
 
     taskENTER_CRITICAL(&s_admin_state_mux);
+    if (has_connected_ids)
+    {
+        admin_prune_disconnected_users_locked(connected_ids, connected_count, now_us);
+    }
     admin_refresh_rotation_locked(now_us);
 
     snapshot->queue_mode_enabled = s_admin_state.queue_mode_enabled;
+    snapshot->oled_mode = s_admin_state.oled_mode;
     snapshot->rotation_paused = s_admin_state.rotation_paused;
     snapshot->default_turn_sec = s_admin_state.default_turn_sec;
     snapshot->min_turn_sec = s_admin_state.min_turn_sec;
     snapshot->max_turn_sec = s_admin_state.max_turn_sec;
     snapshot->max_users = s_admin_state.max_users;
     snapshot->queue_len = s_admin_state.queue_len;
+    snapshot->turn_started_us = s_admin_state.turn_started_us;
 
     for (size_t i = 0; i < s_admin_state.queue_len && i < ADMIN_QUEUE_CAPACITY; i++)
     {
@@ -486,6 +758,11 @@ static bool admin_get_client_identifier(httpd_req_t *req, char *out, size_t out_
     if (peer_addr.ss_family == AF_INET6)
     {
         const struct sockaddr_in6 *addr6 = (const struct sockaddr_in6 *)&peer_addr;
+        struct in_addr mapped_addr4 = {0};
+        if (admin_extract_ipv4_mapped_from_ipv6(&addr6->sin6_addr, &mapped_addr4))
+        {
+            return inet_ntop(AF_INET, &mapped_addr4, out, out_size) != NULL;
+        }
         return inet_ntop(AF_INET6, &addr6->sin6_addr, out, out_size) != NULL;
     }
 
@@ -519,7 +796,7 @@ static bool admin_record_sender_and_check_turn(const char *sender_id)
 
         if (s_admin_state.queue_len > 0)
         {
-            can_send = strcmp(s_admin_state.queue_users[0], sender_id) == 0;
+            can_send = admin_user_ids_equal(s_admin_state.queue_users[0], sender_id);
         }
     }
     taskEXIT_CRITICAL(&s_admin_state_mux);
@@ -813,6 +1090,33 @@ static bool admin_parse_uint16(const char *value, uint16_t *parsed_value)
     return true;
 }
 
+static const char *admin_oled_mode_to_string(oled_mode_t mode)
+{
+    return (mode == OLED_MODE_TECHNICAL) ? "technical" : "exhibition";
+}
+
+static bool admin_parse_oled_mode(const char *value, oled_mode_t *parsed_mode)
+{
+    if (value == NULL || parsed_mode == NULL)
+    {
+        return false;
+    }
+
+    if (strcasecmp(value, "technical") == 0 || strcasecmp(value, "tecnico") == 0)
+    {
+        *parsed_mode = OLED_MODE_TECHNICAL;
+        return true;
+    }
+
+    if (strcasecmp(value, "exhibition") == 0 || strcasecmp(value, "exposition") == 0 || strcasecmp(value, "exposicao") == 0)
+    {
+        *parsed_mode = OLED_MODE_EXHIBITION;
+        return true;
+    }
+
+    return false;
+}
+
 static esp_err_t admin_send_state_json(httpd_req_t *req, const char *status_line, bool ok, const char *message)
 {
     admin_state_snapshot_t snapshot = {0};
@@ -821,6 +1125,17 @@ static esp_err_t admin_send_state_json(httpd_req_t *req, const char *status_line
     const char *status = status_line ? status_line : "200 OK";
     const char *msg = message ? message : "";
     const char *current_user = (snapshot.queue_len > 0) ? snapshot.queue_users[0] : "";
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    uint16_t turn_remaining_sec = 0;
+    bool has_active_turn = false;
+    admin_compute_turn_remaining(now_us,
+                                 snapshot.queue_mode_enabled,
+                                 snapshot.rotation_paused,
+                                 snapshot.queue_len,
+                                 snapshot.default_turn_sec,
+                                 snapshot.turn_started_us,
+                                 &turn_remaining_sec,
+                                 &has_active_turn);
 
     char json[ADMIN_JSON_MAX];
     size_t offset = 0;
@@ -833,22 +1148,26 @@ static esp_err_t admin_send_state_json(httpd_req_t *req, const char *status_line
         !admin_append_json_quoted(json, sizeof(json), &offset, msg) ||
         !admin_append_json_raw(json, sizeof(json), &offset, ",\"queue_mode_enabled\":") ||
         !admin_append_json_raw(json, sizeof(json), &offset, snapshot.queue_mode_enabled ? "true" : "false") ||
+        !admin_append_json_raw(json, sizeof(json), &offset, ",\"oled_mode\":") ||
+        !admin_append_json_quoted(json, sizeof(json), &offset, admin_oled_mode_to_string(snapshot.oled_mode)) ||
         !admin_append_json_raw(json, sizeof(json), &offset, ",\"rotation_paused\":") ||
         !admin_append_json_raw(json, sizeof(json), &offset, snapshot.rotation_paused ? "true" : "false"))
     {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Falha ao montar JSON");
     }
 
-    char number_buffer[192];
+    char number_buffer[256];
     int number_written = snprintf(number_buffer,
                                   sizeof(number_buffer),
-                                  ",\"default_turn_sec\":%u,\"min_turn_sec\":%u,\"max_turn_sec\":%u,\"max_users\":%u,\"ap_max_connections\":%u,\"queue_count\":%u,\"current_user\":",
+                                  ",\"default_turn_sec\":%u,\"min_turn_sec\":%u,\"max_turn_sec\":%u,\"max_users\":%u,\"ap_max_connections\":%u,\"queue_count\":%u,\"turn_remaining_sec\":%u,\"has_active_turn\":%s,\"current_user\":",
                                   (unsigned)snapshot.default_turn_sec,
                                   (unsigned)snapshot.min_turn_sec,
                                   (unsigned)snapshot.max_turn_sec,
                                   (unsigned)snapshot.max_users,
                                   (unsigned)WIFI_AP_MAX_CONN,
-                                  (unsigned)snapshot.queue_len);
+                                  (unsigned)snapshot.queue_len,
+                                  (unsigned)turn_remaining_sec,
+                                  has_active_turn ? "true" : "false");
     if (number_written < 0 || (size_t)number_written >= sizeof(number_buffer))
     {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Falha ao montar JSON");
@@ -886,6 +1205,130 @@ static esp_err_t admin_send_state_json(httpd_req_t *req, const char *status_line
     return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
 }
 
+static esp_err_t queue_status_get_handler(httpd_req_t *req)
+{
+    if (req == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    bool queue_mode_enabled = false;
+    bool rotation_paused = false;
+    uint16_t default_turn_sec = 0;
+    size_t queue_count = 0;
+    uint64_t turn_started_us = 0;
+    uint16_t turn_remaining_sec = 0;
+    bool has_active_turn = false;
+    bool is_current_turn = false;
+    char current_user[ADMIN_USER_ID_MAX_LEN] = {0};
+    char requester_user[ADMIN_USER_ID_MAX_LEN] = {0};
+    bool has_requester_user = admin_get_client_identifier(req, requester_user, sizeof(requester_user));
+    char connected_ids[ADMIN_QUEUE_CAPACITY][ADMIN_USER_ID_MAX_LEN] = {{0}};
+    size_t connected_count = 0;
+    bool has_connected_ids = admin_collect_connected_user_ids(connected_ids, ADMIN_QUEUE_CAPACITY, &connected_count);
+
+    taskENTER_CRITICAL(&s_admin_state_mux);
+    if (has_connected_ids)
+    {
+        admin_prune_disconnected_users_locked(connected_ids, connected_count, now_us);
+    }
+
+    if (s_admin_state.queue_mode_enabled && has_requester_user && requester_user[0] != '\0')
+    {
+        bool requester_connected = true;
+        if (has_connected_ids)
+        {
+            requester_connected = admin_id_in_connected_list(requester_user, connected_ids, connected_count);
+        }
+
+        if (requester_connected)
+        {
+            int requester_index = admin_find_user_index_locked(requester_user);
+            if (requester_index < 0)
+            {
+                size_t max_users = admin_effective_max_users_locked();
+                if (s_admin_state.queue_len < max_users)
+                {
+                    strlcpy(s_admin_state.queue_users[s_admin_state.queue_len], requester_user, ADMIN_USER_ID_MAX_LEN);
+                    s_admin_state.queue_len++;
+                    if (s_admin_state.turn_started_us == 0)
+                    {
+                        s_admin_state.turn_started_us = now_us;
+                    }
+                }
+            }
+        }
+    }
+
+    admin_refresh_rotation_locked(now_us);
+
+    queue_mode_enabled = s_admin_state.queue_mode_enabled;
+    rotation_paused = s_admin_state.rotation_paused;
+    default_turn_sec = s_admin_state.default_turn_sec;
+    queue_count = s_admin_state.queue_len;
+    turn_started_us = s_admin_state.turn_started_us;
+    if (queue_count > 0)
+    {
+        strlcpy(current_user, s_admin_state.queue_users[0], sizeof(current_user));
+        if (has_requester_user && requester_user[0] != '\0')
+        {
+            is_current_turn = admin_user_ids_equal(current_user, requester_user);
+        }
+    }
+
+    admin_compute_turn_remaining(now_us,
+                                 queue_mode_enabled,
+                                 rotation_paused,
+                                 queue_count,
+                                 default_turn_sec,
+                                 turn_started_us,
+                                 &turn_remaining_sec,
+                                 &has_active_turn);
+    taskEXIT_CRITICAL(&s_admin_state_mux);
+
+    char json[QUEUE_STATUS_JSON_MAX];
+    size_t offset = 0;
+    json[0] = '\0';
+
+    if (!admin_append_json_raw(json, sizeof(json), &offset, "{") ||
+        !admin_append_json_raw(json, sizeof(json), &offset, "\"ok\":true") ||
+        !admin_append_json_raw(json, sizeof(json), &offset, ",\"queue_mode_enabled\":") ||
+        !admin_append_json_raw(json, sizeof(json), &offset, queue_mode_enabled ? "true" : "false") ||
+        !admin_append_json_raw(json, sizeof(json), &offset, ",\"rotation_paused\":") ||
+        !admin_append_json_raw(json, sizeof(json), &offset, rotation_paused ? "true" : "false"))
+    {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Falha ao montar JSON");
+    }
+
+    char number_buffer[180];
+    int number_written = snprintf(number_buffer,
+                                  sizeof(number_buffer),
+                                  ",\"default_turn_sec\":%u,\"queue_count\":%u,\"turn_remaining_sec\":%u,\"has_active_turn\":%s,\"is_current_turn\":%s,\"current_user\":",
+                                  (unsigned)default_turn_sec,
+                                  (unsigned)queue_count,
+                                  (unsigned)turn_remaining_sec,
+                                  has_active_turn ? "true" : "false",
+                                  is_current_turn ? "true" : "false");
+    if (number_written < 0 || (size_t)number_written >= sizeof(number_buffer))
+    {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Falha ao montar JSON");
+    }
+
+    if (!admin_append_json_raw(json, sizeof(json), &offset, number_buffer) ||
+        !admin_append_json_quoted(json, sizeof(json), &offset, current_user) ||
+        !admin_append_json_raw(json, sizeof(json), &offset, "}"))
+    {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Falha ao montar JSON");
+    }
+
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    httpd_resp_set_hdr(req, "Pragma", "no-cache");
+    return httpd_resp_send(req, json, HTTPD_RESP_USE_STRLEN);
+}
+
 static esp_err_t admin_handle_post(httpd_req_t *req)
 {
     char body[ADMIN_POST_BODY_MAX];
@@ -910,6 +1353,30 @@ static esp_err_t admin_handle_post(httpd_req_t *req)
         return admin_send_state_json(req, "200 OK", true, "Estado atualizado");
     }
 
+    if (strcmp(action, "set_oled_mode") == 0)
+    {
+        char mode_value[24];
+        if (httpd_query_key_value(body, "mode", mode_value, sizeof(mode_value)) != ESP_OK)
+        {
+            return admin_send_state_json(req, "400 Bad Request", false, "Campo mode obrigatorio");
+        }
+
+        oled_mode_t mode = OLED_MODE_EXHIBITION;
+        if (!admin_parse_oled_mode(mode_value, &mode))
+        {
+            return admin_send_state_json(req, "400 Bad Request", false, "Valor de mode invalido");
+        }
+
+        taskENTER_CRITICAL(&s_admin_state_mux);
+        s_admin_state.oled_mode = mode;
+        taskEXIT_CRITICAL(&s_admin_state_mux);
+
+        return admin_send_state_json(req,
+                                     "200 OK",
+                                     true,
+                                     (mode == OLED_MODE_TECHNICAL) ? "Modo tecnico ativado" : "Modo exposicao ativado");
+    }
+
     if (strcmp(action, "set_queue_mode") == 0)
     {
         char enabled_value[16];
@@ -927,6 +1394,15 @@ static esp_err_t admin_handle_post(httpd_req_t *req)
         uint64_t now_us = (uint64_t)esp_timer_get_time();
         taskENTER_CRITICAL(&s_admin_state_mux);
         s_admin_state.queue_mode_enabled = enabled;
+        if (enabled)
+        {
+            s_admin_state.rotation_paused = false;
+            s_admin_state.pause_started_us = 0;
+        }
+        else
+        {
+            s_admin_state.pause_started_us = 0;
+        }
         if (enabled && s_admin_state.queue_len > 0 && s_admin_state.turn_started_us == 0)
         {
             s_admin_state.turn_started_us = now_us;
@@ -942,6 +1418,7 @@ static esp_err_t admin_handle_post(httpd_req_t *req)
         taskENTER_CRITICAL(&s_admin_state_mux);
         s_admin_state.queue_len = 0;
         s_admin_state.turn_started_us = 0;
+        s_admin_state.pause_started_us = 0;
         for (size_t i = 0; i < ADMIN_QUEUE_CAPACITY; i++)
         {
             s_admin_state.queue_users[i][0] = '\0';
@@ -1072,7 +1549,7 @@ httpd_handle_t start_webserver(void)
     config.send_wait_timeout = 3;
     config.enable_so_linger = true;
     config.enable_so_linger = false;
-    config.stack_size = 8192;
+    config.stack_size = 16384;
 
     httpd_handle_t server = NULL;
     esp_err_t start_err = httpd_start(&server, &config);
@@ -1157,6 +1634,13 @@ httpd_handle_t start_webserver(void)
         .user_ctx = NULL,
     };
 
+    httpd_uri_t queue_status_uri = {
+        .uri = QUEUE_STATUS_URI,
+        .method = HTTP_GET,
+        .handler = queue_status_get_handler,
+        .user_ctx = NULL,
+    };
+
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_html_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &css_uri));
@@ -1167,6 +1651,7 @@ httpd_handle_t start_webserver(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &favicon_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &admin_get_uri));
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &admin_post_uri));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &queue_status_uri));
 
     // Mantém compatibilidade com iPhone/macOS e outros clientes
     register_captive_uri(server, "/generate_204");
@@ -1188,6 +1673,20 @@ httpd_handle_t start_webserver(void)
              (unsigned)config.backlog_conn,
              config.lru_purge_enable ? "on" : "off");
     return server;
+}
+
+void webserver_get_admin_oled_status(admin_oled_status_t *out_status)
+{
+    if (out_status == NULL)
+    {
+        return;
+    }
+
+    taskENTER_CRITICAL(&s_admin_state_mux);
+    out_status->queue_mode_enabled = s_admin_state.queue_mode_enabled;
+    out_status->queue_count = (uint16_t)s_admin_state.queue_len;
+    out_status->oled_mode = s_admin_state.oled_mode;
+    taskEXIT_CRITICAL(&s_admin_state_mux);
 }
 
 esp_err_t matrix_ws_handler(httpd_req_t *req)

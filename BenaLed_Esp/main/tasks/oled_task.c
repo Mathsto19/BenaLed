@@ -1,16 +1,21 @@
 #include "oled_task.h"
+#include "webserver.h"
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #define OLED_FRAMEBUFFER_SIZE ((OLED_WIDTH * OLED_HEIGHT) / 8)
 #define OLED_TEXT "BenaLed"
 #define OLED_FRAME_TIME_MS 33
+#define OLED_TECH_INTRO_TIME_MS 3000
+#define OLED_STATUS_REFRESH_MS 500
 #define OLED_TASK_STACK_SIZE 4096
 #define OLED_TASK_PRIORITY 4
 
@@ -46,17 +51,39 @@ static bool s_task_started = false;
 static uint8_t s_framebuffer[OLED_FRAMEBUFFER_SIZE];
 
 static const glyph5x7_t s_font_table[] = {
+    {' ', {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}},
+    {':', {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00}},
+    {'0', {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}},
+    {'1', {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E}},
+    {'2', {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}},
+    {'3', {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E}},
+    {'4', {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}},
+    {'5', {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E}},
+    {'6', {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}},
+    {'7', {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}},
+    {'8', {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}},
+    {'9', {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C}},
     {'A', {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}},
     {'B', {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}},
+    {'C', {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}},
     {'D', {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E}},
     {'E', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}},
+    {'F', {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}},
+    {'I', {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}},
     {'L', {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}},
+    {'M', {0x11, 0x1B, 0x15, 0x11, 0x11, 0x11, 0x11}},
     {'N', {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}},
+    {'O', {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
+    {'S', {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}},
+    {'T', {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}},
+    {'U', {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}},
     {'a', {0x00, 0x0E, 0x01, 0x0F, 0x11, 0x13, 0x0D}},
     {'d', {0x01, 0x01, 0x0D, 0x13, 0x11, 0x13, 0x0D}},
     {'e', {0x00, 0x0E, 0x11, 0x1F, 0x10, 0x11, 0x0E}},
     {'n', {0x00, 0x16, 0x19, 0x11, 0x11, 0x11, 0x11}},
 };
+
+static const uint8_t s_blank_glyph[FONT_HEIGHT] = {0};
 
 static const subtle_star_t s_subtle_stars[] = {
     {8, 5, 5, 1},
@@ -213,7 +240,94 @@ static const uint8_t *font_rows_for_char(char ch)
         }
     }
 
-    return s_font_table[1].rows; // fallback: 'B'
+    return s_blank_glyph;
+}
+
+static int text_width_px_scaled(const char *text, int scale_x, int spacing)
+{
+    if (text == NULL || text[0] == '\0')
+    {
+        return 0;
+    }
+
+    int width = 0;
+    for (const char *c = text; *c != '\0'; c++)
+    {
+        width += FONT_WIDTH * scale_x;
+        if (*(c + 1) != '\0')
+        {
+            width += spacing;
+        }
+    }
+
+    return width;
+}
+
+static void draw_text_block_scaled(int x, int y, const char *text, int scale_x, int scale_y, int spacing)
+{
+    if (text == NULL)
+    {
+        return;
+    }
+
+    int cursor_x = x;
+    for (const char *c = text; *c != '\0'; c++)
+    {
+        const uint8_t *rows = font_rows_for_char(*c);
+        for (int row = 0; row < FONT_HEIGHT; row++)
+        {
+            const uint8_t pattern = rows[row];
+            for (int col = 0; col < FONT_WIDTH; col++)
+            {
+                const uint8_t bit = (uint8_t)(1U << (FONT_WIDTH - 1 - col));
+                if ((pattern & bit) == 0)
+                {
+                    continue;
+                }
+
+                const int start_x = cursor_x + (col * scale_x);
+                const int start_y = y + (row * scale_y);
+                for (int dy = 0; dy < scale_y; dy++)
+                {
+                    for (int dx = 0; dx < scale_x; dx++)
+                    {
+                        oled_set_pixel(start_x + dx, start_y + dy, true);
+                    }
+                }
+            }
+        }
+
+        cursor_x += (FONT_WIDTH * scale_x) + spacing;
+    }
+}
+
+static void draw_hline(int x0, int x1, int y)
+{
+    for (int x = x0; x <= x1; x++)
+    {
+        oled_set_pixel(x, y, true);
+    }
+}
+
+static void draw_vline(int y0, int y1, int x)
+{
+    for (int y = y0; y <= y1; y++)
+    {
+        oled_set_pixel(x, y, true);
+    }
+}
+
+static void draw_rect_outline(int x, int y, int w, int h)
+{
+    if (w <= 0 || h <= 0)
+    {
+        return;
+    }
+
+    draw_hline(x, x + w - 1, y);
+    draw_hline(x, x + w - 1, y + h - 1);
+    draw_vline(y, y + h - 1, x);
+    draw_vline(y, y + h - 1, x + w - 1);
 }
 
 static void draw_glyph_scaled(int x, int y, char ch, int reveal_x, int scan_x, bool pulse_on, uint32_t frame)
@@ -270,18 +384,7 @@ static void draw_glyph_scaled(int x, int y, char ch, int reveal_x, int scan_x, b
 
 static int text_width_px(const char *text)
 {
-    int width = 0;
-
-    for (const char *c = text; *c != '\0'; c++)
-    {
-        width += FONT_WIDTH * FONT_SCALE_X;
-        if (*(c + 1) != '\0')
-        {
-            width += FONT_SPACING;
-        }
-    }
-
-    return width;
+    return text_width_px_scaled(text, FONT_SCALE_X, FONT_SPACING);
 }
 
 static void draw_typing_cursor(int x, int y, int h, uint32_t frame)
@@ -377,6 +480,69 @@ static void render_logo_frame(uint32_t frame)
         {
             draw_typing_cursor(typing_cursor_x, y0, text_height, frame);
         }
+    }
+}
+
+static uint16_t oled_get_connected_station_count(void)
+{
+    wifi_sta_list_t station_list = {0};
+    if (esp_wifi_ap_get_sta_list(&station_list) != ESP_OK)
+    {
+        return 0;
+    }
+
+    return (uint16_t)station_list.num;
+}
+
+static void render_status_frame(uint16_t connected_count, uint16_t queue_count, bool queue_mode_enabled, uint32_t frame)
+{
+    memset(s_framebuffer, 0, sizeof(s_framebuffer));
+
+    draw_rect_outline(0, 0, OLED_WIDTH, OLED_HEIGHT);
+    draw_rect_outline(2, 2, OLED_WIDTH - 4, OLED_HEIGHT - 4);
+
+    const char *title = "STATUS";
+    const int title_width = text_width_px_scaled(title, 2, 1);
+    const int title_x = (OLED_WIDTH - title_width) / 2;
+    draw_text_block_scaled(title_x, 6, title, 2, 2, 1);
+
+    const int divider_y = 22;
+    draw_hline(8, OLED_WIDTH - 9, divider_y);
+
+    const int sweep_x = 10 + (int)(frame % (uint32_t)(OLED_WIDTH - 20));
+    oled_set_pixel(sweep_x, divider_y - 1, true);
+    oled_set_pixel(sweep_x, divider_y + 1, true);
+
+    char line1[28];
+    char line2[28];
+    char line3[28];
+    snprintf(line1, sizeof(line1), "CONECTADOS: %u", (unsigned)connected_count);
+    snprintf(line2, sizeof(line2), "NA FILA: %u", (unsigned)queue_count);
+    snprintf(line3, sizeof(line3), "MODO FILA: %s", queue_mode_enabled ? "ON" : "OFF");
+
+    draw_text_block_scaled(8, 28, line1, 1, 1, 1);
+    draw_text_block_scaled(8, 39, line2, 1, 1, 1);
+    draw_text_block_scaled(8, 50, line3, 1, 1, 1);
+
+    const int status_box_x = OLED_WIDTH - 16;
+    const int status_box_y = 49;
+    draw_rect_outline(status_box_x, status_box_y, 10, 10);
+    if (queue_mode_enabled)
+    {
+        for (int y = status_box_y + 2; y < status_box_y + 8; y++)
+        {
+            for (int x = status_box_x + 2; x < status_box_x + 8; x++)
+            {
+                if (((x + y + (int)frame) & 0x01) == 0)
+                {
+                    oled_set_pixel(x, y, true);
+                }
+            }
+        }
+    }
+    else
+    {
+        draw_hline(status_box_x + 2, status_box_x + 7, status_box_y + 5);
     }
 }
 
@@ -588,10 +754,56 @@ static void oled_animation_task(void *arg)
 {
     (void)arg;
     uint32_t frame = 0;
+    const uint64_t technical_intro_deadline_us = ((uint64_t)esp_timer_get_time()) + ((uint64_t)OLED_TECH_INTRO_TIME_MS * 1000ULL);
+    bool technical_intro_consumed = false;
+    uint64_t last_status_refresh_us = 0;
+    uint16_t connected_count = 0;
+    oled_mode_t last_mode = OLED_MODE_EXHIBITION;
+    bool has_last_mode = false;
 
     while (1)
     {
-        render_logo_frame(frame);
+        admin_oled_status_t oled_status = {0};
+        webserver_get_admin_oled_status(&oled_status);
+
+        const uint64_t now_us = (uint64_t)esp_timer_get_time();
+        if (!has_last_mode || oled_status.oled_mode != last_mode)
+        {
+            last_mode = oled_status.oled_mode;
+            has_last_mode = true;
+
+            if (last_mode == OLED_MODE_TECHNICAL)
+            {
+                last_status_refresh_us = 0;
+            }
+        }
+
+        bool show_logo_animation = true;
+        if (oled_status.oled_mode == OLED_MODE_TECHNICAL)
+        {
+            bool show_boot_intro = (!technical_intro_consumed) && (now_us < technical_intro_deadline_us);
+            show_logo_animation = show_boot_intro;
+            if (!show_boot_intro)
+            {
+                technical_intro_consumed = true;
+            }
+        }
+
+        if (show_logo_animation)
+        {
+            render_logo_frame(frame);
+        }
+        else
+        {
+            if (last_status_refresh_us == 0 || (now_us - last_status_refresh_us) >= ((uint64_t)OLED_STATUS_REFRESH_MS * 1000ULL))
+            {
+                connected_count = oled_get_connected_station_count();
+                last_status_refresh_us = now_us;
+            }
+
+            render_status_frame(connected_count, oled_status.queue_count, oled_status.queue_mode_enabled, frame);
+        }
+
         esp_err_t ret = oled_flush();
         if (ret != ESP_OK && (frame % 30U) == 0U)
         {
@@ -637,6 +849,6 @@ esp_err_t init_oled_task(void)
     }
 
     s_task_started = true;
-    ESP_LOGI(TAG, "OLED iniciada com animacao BenaLed");
+    ESP_LOGI(TAG, "OLED iniciada (modo Exposicao ou Tecnico com status)");
     return ESP_OK;
 }

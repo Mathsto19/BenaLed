@@ -168,6 +168,13 @@ body {
   gap: 6px;
 }
 
+.canvas-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .canvas-title {
   font-size: 1.5rem;
   font-weight: 800;
@@ -180,6 +187,52 @@ body {
   font-size: 0.98rem;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.queue-hud {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  min-height: 44px;
+  min-width: 88px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+}
+
+.queue-hud.is-hidden {
+  display: none;
+}
+
+.queue-hud-timer-value {
+  display: block;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #f3f7fb;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-hud.is-my-turn {
+  border-color: rgba(0, 229, 255, 0.42);
+  background: rgba(0, 229, 255, 0.14);
+}
+
+.queue-hud.is-my-turn .queue-hud-timer-value {
+  color: #dffbff;
+}
+
+.queue-hud.is-waiting-turn {
+  border-color: rgba(255, 93, 115, 0.44);
+  background: rgba(255, 93, 115, 0.13);
+}
+
+.queue-hud.is-waiting-turn .queue-hud-timer-value {
+  color: #ffdbe1;
 }
 
 .header-actions {
@@ -998,6 +1051,14 @@ body {
 
   .canvas-heading {
     text-align: center;
+  }
+
+  .canvas-heading-row {
+    justify-content: center;
+  }
+
+  .queue-hud {
+    margin: 0;
   }
 
   .canvas-title {

@@ -24,7 +24,9 @@
     <main class="card">
       <div class="canvas-header">
         <div class="canvas-heading">
-          <span class="canvas-title">Desenhe no quadro</span>
+          <div class="canvas-heading-row">
+            <span class="canvas-title">Desenhe no quadro</span>
+          </div>
           <p class="canvas-subtitle">
             O que for desenhado aqui será reproduzido no painel
           </p>
@@ -48,7 +50,9 @@
               </svg>
             </span>
           </button>
-
+          <div id="queueHud" class="queue-hud is-hidden" aria-live="polite">
+            <span id="queueHudTimer" class="queue-hud-timer-value">00:00</span>
+          </div>
           <button
             id="fullscreenBtn"
             type="button"

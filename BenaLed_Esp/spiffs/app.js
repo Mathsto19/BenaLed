@@ -33,6 +33,8 @@ const fullscreenBtn = document.getElementById("fullscreenBtn");
 const mediaPlaybackBtn = document.getElementById("mediaPlaybackBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
+const queueHud = document.getElementById("queueHud");
+const queueHudTimer = document.getElementById("queueHudTimer");
 
 let activeVideoElement = null;
 let activeVideoUrl = null;
@@ -76,6 +78,21 @@ const undoHistory = [];
 const redoHistory = [];
 let strokeStartSnapshot = null;
 let strokeHadChanges = false;
+const QUEUE_STATUS_ENDPOINT = "/queue-status";
+const QUEUE_STATUS_POLL_INTERVAL_MS = 2500;
+
+let queueHudState = {
+  queue_mode_enabled: false,
+  rotation_paused: false,
+  queue_count: 0,
+  current_user: "",
+  default_turn_sec: 0,
+  turn_remaining_sec: 0,
+  has_active_turn: false,
+  is_current_turn: false,
+};
+let queueHudPollTimer = null;
+let queueHudTickTimer = null;
 
 function createEmptyFrame() {
   return Array.from({ length: GRID_SIZE }, () =>
@@ -181,8 +198,13 @@ function getFullscreenElement() {
 }
 
 function isStandaloneDisplayMode() {
+  let standaloneByMediaQuery = false;
+  if (typeof window.matchMedia === "function") {
+    standaloneByMediaQuery = window.matchMedia("(display-mode: standalone)").matches;
+  }
+
   return Boolean(
-    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    standaloneByMediaQuery ||
     window.navigator.standalone === true
   );
 }
@@ -2087,7 +2109,7 @@ if (redoBtn) {
 }
 
 mediaInput.addEventListener("change", (event) => {
-  const file = event.target.files?.[0];
+  const file = event.target && event.target.files ? event.target.files[0] : null;
 
   void tryRestoreFullscreenAfterMediaPicker();
   scheduleFullscreenRestoreAfterMediaPicker();
@@ -2192,6 +2214,171 @@ function scheduleRender() {
   requestAnimationFrame(() => {
     renderScheduled = false;
     render();
+  });
+}
+
+function normalizeQueueStatusData(data) {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  return {
+    queue_mode_enabled: Boolean(data.queue_mode_enabled),
+    rotation_paused: Boolean(data.rotation_paused),
+    queue_count: Math.max(0, Number(data.queue_count || 0)),
+    current_user: typeof data.current_user === "string" ? data.current_user : "",
+    default_turn_sec: Math.max(0, Number(data.default_turn_sec || 0)),
+    turn_remaining_sec: Math.max(0, Number(data.turn_remaining_sec || 0)),
+    has_active_turn: Boolean(data.has_active_turn),
+    is_current_turn: Boolean(data.is_current_turn),
+  };
+}
+
+function formatQueueCountdown(totalSeconds) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+    return "00:00";
+  }
+
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function renderQueueHud() {
+  if (!queueHud || !queueHudTimer) {
+    return;
+  }
+
+  const enabled = queueHudState.queue_mode_enabled;
+  queueHud.classList.toggle("is-hidden", !enabled);
+  queueHud.classList.remove("is-my-turn", "is-waiting-turn");
+  if (!enabled) {
+    return;
+  }
+
+  const hasTurn = queueHudState.has_active_turn && !queueHudState.rotation_paused;
+  if (queueHudState.rotation_paused && queueHudState.queue_count > 0) {
+    queueHudTimer.textContent = "Pausado";
+  } else {
+    const remainingSeconds = hasTurn ? queueHudState.turn_remaining_sec : 0;
+    queueHudTimer.textContent = formatQueueCountdown(remainingSeconds);
+  }
+
+  if (queueHudState.queue_count > 0) {
+    queueHud.classList.add(queueHudState.is_current_turn ? "is-my-turn" : "is-waiting-turn");
+  }
+}
+
+function shouldAutoSyncOnTurnChange(previousState, nextState) {
+  if (!nextState.queue_mode_enabled || nextState.rotation_paused) {
+    return false;
+  }
+
+  if (!nextState.has_active_turn || !nextState.is_current_turn) {
+    return false;
+  }
+
+  const becameCurrentTurn = !previousState.is_current_turn && nextState.is_current_turn;
+  const resumedIntoCurrentTurn = previousState.rotation_paused && !nextState.rotation_paused;
+  const queueModeJustEnabled = !previousState.queue_mode_enabled && nextState.queue_mode_enabled;
+  const turnOwnerChanged = previousState.current_user !== nextState.current_user;
+
+  return becameCurrentTurn || resumedIntoCurrentTurn || queueModeJustEnabled || turnOwnerChanged;
+}
+
+function applyQueueStatusData(data) {
+  const normalized = normalizeQueueStatusData(data);
+  if (!normalized) {
+    return;
+  }
+
+  const previousState = queueHudState;
+  queueHudState = normalized;
+  renderQueueHud();
+
+  if (shouldAutoSyncOnTurnChange(previousState, queueHudState)) {
+    scheduleConsoleExport();
+  }
+}
+
+function tickQueueHudCountdown() {
+  if (!queueHudState.queue_mode_enabled) {
+    return;
+  }
+
+  if (!queueHudState.rotation_paused && queueHudState.has_active_turn && queueHudState.turn_remaining_sec > 0) {
+    queueHudState.turn_remaining_sec -= 1;
+    if (queueHudState.turn_remaining_sec === 0) {
+      void refreshQueueHudStatus();
+    }
+  }
+
+  renderQueueHud();
+}
+
+async function refreshQueueHudStatus() {
+  if (!queueHud) {
+    return;
+  }
+
+  try {
+    const response = await fetch(QUEUE_STATUS_ENDPOINT, { cache: "no-store" });
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json();
+    if (data && data.ok === false) {
+      return;
+    }
+
+    applyQueueStatusData(data);
+  } catch (error) {
+    console.warn("Falha ao atualizar status de fila:", error);
+  }
+}
+
+function initQueueHud() {
+  if (!queueHud) {
+    return;
+  }
+
+  if (queueHudPollTimer !== null) {
+    window.clearInterval(queueHudPollTimer);
+    queueHudPollTimer = null;
+  }
+
+  if (queueHudTickTimer !== null) {
+    window.clearInterval(queueHudTickTimer);
+    queueHudTickTimer = null;
+  }
+
+  void refreshQueueHudStatus();
+  queueHudPollTimer = window.setInterval(() => {
+    void refreshQueueHudStatus();
+  }, QUEUE_STATUS_POLL_INTERVAL_MS);
+
+  queueHudTickTimer = window.setInterval(() => {
+    tickQueueHudCountdown();
+  }, 1000);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      void refreshQueueHudStatus();
+    }
+  });
+
+  window.addEventListener("beforeunload", () => {
+    if (queueHudPollTimer !== null) {
+      window.clearInterval(queueHudPollTimer);
+      queueHudPollTimer = null;
+    }
+
+    if (queueHudTickTimer !== null) {
+      window.clearInterval(queueHudTickTimer);
+      queueHudTickTimer = null;
+    }
   });
 }
 
@@ -2313,6 +2500,7 @@ setSelectedColor(selectedColor);
 updateFullscreenButton();
 updateMediaPlaybackButton();
 updateHistoryButtons();
+initQueueHud();
 
 requestAnimationFrame(() => {
   connectMatrixWebSocket();

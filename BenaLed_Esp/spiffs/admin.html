@@ -9,18 +9,20 @@
       --bg: #07111f;
       --bg-2: #0d1728;
       --bg-3: #101d33;
-      --panel: rgba(10, 16, 29, 0.84);
-      --panel-2: rgba(17, 28, 45, 0.86);
+      --card: rgba(10, 16, 29, 0.82);
+      --card-border: rgba(126, 146, 179, 0.22);
+      --card-highlight: rgba(255, 255, 255, 0.08);
+      --panel: rgba(12, 20, 34, 0.86);
+      --panel-2: rgba(16, 27, 44, 0.9);
       --line: rgba(126, 146, 179, 0.22);
-      --line-strong: rgba(0, 229, 255, 0.26);
+      --line-strong: rgba(0, 229, 255, 0.3);
       --text: #f6f8fb;
       --muted: #9aa8bf;
       --ok: #4de3a2;
       --danger: #ff6b6b;
-      --btn: rgba(255, 255, 255, 0.06);
-      --btn-hover: rgba(0, 229, 255, 0.16);
       --btn-border: rgba(255, 255, 255, 0.1);
       --focus: rgba(0, 229, 255, 0.4);
+      --ui-font: "Segoe UI", "Inter", Arial, sans-serif;
     }
 
     * {
@@ -34,8 +36,9 @@
 
     body {
       margin: 0;
+      font-family: var(--ui-font);
       color: var(--text);
-      font-family: "Segoe UI", Arial, sans-serif;
+      min-height: 100vh;
       background:
         radial-gradient(circle at top, rgba(0, 229, 255, 0.08), transparent 28%),
         radial-gradient(circle at 20% 80%, rgba(0, 153, 255, 0.08), transparent 24%),
@@ -49,68 +52,65 @@
       border-radius: 999px;
       filter: blur(90px);
       pointer-events: none;
-      opacity: 0.34;
+      opacity: 0.35;
       z-index: 0;
     }
 
     .bg-orb-1 {
       width: 220px;
       height: 220px;
-      top: 60px;
+      top: 70px;
       left: 8%;
-      background: rgba(0, 229, 255, 0.2);
+      background: rgba(0, 229, 255, 0.18);
     }
 
     .bg-orb-2 {
-      width: 270px;
-      height: 270px;
+      width: 260px;
+      height: 260px;
       right: 10%;
-      bottom: 60px;
-      background: rgba(97, 66, 255, 0.2);
+      bottom: 80px;
+      background: rgba(97, 66, 255, 0.16);
     }
 
-    .shell {
+    .app {
       position: relative;
       z-index: 1;
-      max-width: 980px;
+      max-width: 920px;
       margin: 0 auto;
-      padding: 16px 16px 26px;
+      padding: 12px 18px 18px;
     }
 
-    .top {
-      margin-bottom: 14px;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
-        var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 16px 16px 14px;
-      box-shadow:
-        0 18px 42px rgba(0, 0, 0, 0.35),
-        inset 0 1px 0 rgba(255, 255, 255, 0.07);
-      backdrop-filter: blur(14px);
+    .topbar {
+      margin-bottom: 10px;
     }
 
-    .brand-title {
+    .welcome-header {
+      text-align: center;
+      margin-bottom: 10px;
+      padding-top: 0;
+    }
+
+    .welcome-title {
       position: relative;
       display: inline-block;
       margin: 0;
       font-family: "Arial Narrow", "Bahnschrift SemiCondensed", Arial, sans-serif;
-      font-size: clamp(40px, 5vw, 62px);
+      font-size: clamp(56px, 5vw, 78px);
       font-weight: 600;
-      line-height: 0.92;
-      letter-spacing: -0.6px;
+      line-height: 0.9;
+      letter-spacing: -0.9px;
+      text-align: center;
       isolation: isolate;
     }
 
-    .brand-title span {
+    .welcome-title span {
       position: relative;
-      z-index: 2;
+      z-index: 3;
       color: #000;
       font-weight: 600;
     }
 
-    .brand-title::before {
+    .welcome-title::before {
       content: attr(data-text);
       position: absolute;
       inset: 0;
@@ -121,44 +121,83 @@
         -2px 0 0 #ff004c,
          2px 0 0 #ff7a00,
          0 -2px 0 #00e5ff,
-         0 2px 0 #8a2eff;
-      animation: hueflow 4s linear infinite;
+         0 2px 0 #8a2eff,
+        -2px -2px 0 #ff004c,
+         2px -2px 0 #ff7a00,
+        -2px 2px 0 #00e5ff,
+         2px 2px 0 #8a2eff;
+      animation: rainbowBorder 4s linear infinite;
     }
 
-    .brand-title::after {
+    .welcome-title::after {
       content: attr(data-text);
       position: absolute;
       inset: 0;
       z-index: 0;
       color: transparent;
       pointer-events: none;
-      opacity: 0.7;
+      opacity: 0.75;
       text-shadow:
         0 0 4px #ff004c,
         0 0 6px #ff7a00,
         0 0 8px #00e5ff,
         0 0 10px #8a2eff;
-      filter: blur(1.2px);
-      animation: hueflow 4s linear infinite;
+      filter: blur(1.5px);
+      animation: rainbowBorder 4s linear infinite;
+    }
+
+    .card {
+      position: relative;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0)),
+        var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 28px;
+      padding: 18px;
+      box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.35),
+        inset 0 1px 0 var(--card-highlight);
+      backdrop-filter: blur(14px);
+    }
+
+    .admin-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
     }
 
     .subtitle {
-      margin: 10px 0 0;
+      margin: 0;
       color: var(--muted);
       line-height: 1.5;
-      max-width: 70ch;
+      max-width: 72ch;
       font-size: 0.96rem;
     }
 
+    .admin-description {
+      align-self: center;
+      text-align: center;
+    }
+
+    .subtitle code {
+      color: #dffcff;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: 0.92em;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+
     .notice {
-      margin-top: 14px;
+      width: 100%;
+      min-height: 44px;
       padding: 10px 12px;
       border: 1px solid var(--btn-border);
-      border-radius: 12px;
+      border-radius: 14px;
       background: rgba(255, 255, 255, 0.04);
       color: var(--muted);
       font-size: 0.95rem;
-      min-height: 42px;
       display: flex;
       align-items: center;
     }
@@ -175,11 +214,43 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
+      grid-template-areas:
+        "oled policies"
+        "queueMode policies"
+        "rotation queueCurrent";
+      gap: 14px;
+      align-items: start;
     }
 
-    .card {
+    .admin-oled-card {
+      grid-area: oled;
+    }
+
+    .admin-queue-mode-card {
+      grid-area: queueMode;
+    }
+
+    .admin-rotation-card {
+      grid-area: rotation;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .admin-rotation-card h2,
+    .admin-rotation-card .row,
+    .admin-rotation-card .turn-timer {
+      margin: 0;
+    }
+
+    .admin-rotation-card,
+    .queue-current-card {
+      height: 166px;
+    }
+
+    .section-card {
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0)),
         linear-gradient(180deg, var(--panel), var(--panel-2));
@@ -192,10 +263,36 @@
       backdrop-filter: blur(10px);
     }
 
-    .card h2 {
-      margin: 0 0 10px;
-      font-size: 1.05rem;
+    .section-card h2 {
+      margin: 0 0 12px;
+      font-size: 1.08rem;
       letter-spacing: 0.01em;
+    }
+
+    .mode-options {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .mode-options > button {
+      flex: 1 1 170px;
+    }
+
+    .mode-option-btn {
+      min-height: 42px;
+      border-radius: 11px;
+      font-size: 0.95rem;
+    }
+
+    .mode-option-btn.is-active {
+      border-color: var(--line-strong);
+      background:
+        linear-gradient(180deg, rgba(0, 229, 255, 0.24), rgba(0, 229, 255, 0.1)),
+        rgba(0, 229, 255, 0.12);
+      box-shadow:
+        inset 0 0 0 1px rgba(0, 229, 255, 0.26),
+        0 8px 20px rgba(0, 229, 255, 0.11);
     }
 
     .row {
@@ -204,29 +301,68 @@
       flex-wrap: wrap;
     }
 
+    .row > button {
+      flex: 1 1 170px;
+    }
+
+    .admin-policies-card {
+      grid-area: policies;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-self: start;
+      padding: 16px;
+    }
+
+    .admin-policies-card h2 {
+      margin-bottom: 14px;
+    }
+
+    .policy-form {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .admin-policies-card .field-grid {
+      gap: 14px 12px;
+    }
+
+    .admin-policies-card label {
+      gap: 6px;
+      font-size: 0.9rem;
+    }
+
+    .admin-policies-card input[type="number"] {
+      min-height: 44px;
+      border-color: rgba(255, 255, 255, 0.12);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
     .field-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 12px;
+      margin-bottom: 0;
     }
 
     label {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 7px;
       color: var(--muted);
       font-size: 0.92rem;
     }
 
     input[type="number"] {
       width: 100%;
-      min-height: 40px;
-      border-radius: 10px;
+      min-height: 42px;
+      border-radius: 11px;
       border: 1px solid var(--btn-border);
       background: rgba(8, 12, 20, 0.8);
       color: var(--text);
-      padding: 0 10px;
+      padding: 0 11px;
       font-size: 1rem;
       outline: none;
       transition: border-color 0.16s ease, box-shadow 0.16s ease;
@@ -238,50 +374,90 @@
     }
 
     button {
-      min-height: 40px;
+      min-height: 44px;
       border: 1px solid var(--btn-border);
-      border-radius: 10px;
+      border-radius: 12px;
       background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
-        var(--btn);
+        rgba(255, 255, 255, 0.04);
       color: var(--text);
-      padding: 0 12px;
-      font-weight: 700;
+      padding: 0 14px;
+      font-family: var(--ui-font);
+      font-size: 0.95rem;
+      font-weight: 800;
       cursor: pointer;
-      transition: background 0.15s ease, transform 0.15s ease;
+      transition:
+        transform 0.18s ease,
+        border-color 0.18s ease,
+        background 0.18s ease,
+        box-shadow 0.18s ease;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 10px 24px rgba(0, 0, 0, 0.16);
     }
 
     button:hover {
-      background: var(--btn-hover);
-      border-color: var(--line-strong);
       transform: translateY(-1px);
+      border-color: var(--line-strong);
+      background:
+        linear-gradient(180deg, rgba(0, 229, 255, 0.12), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.05);
     }
 
     button:disabled {
-      opacity: 0.6;
+      opacity: 0.56;
       cursor: not-allowed;
       transform: none;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 8px 18px rgba(0, 0, 0, 0.14);
     }
 
     button.danger {
-      background:
-        linear-gradient(180deg, rgba(255, 107, 107, 0.16), rgba(255, 255, 255, 0.03)),
-        rgba(255, 107, 107, 0.08);
       border-color: rgba(255, 107, 107, 0.35);
+      background:
+        linear-gradient(180deg, rgba(255, 107, 107, 0.14), rgba(255, 255, 255, 0.03)),
+        rgba(255, 107, 107, 0.08);
       color: #ffd4d4;
     }
 
     button.danger:hover {
-      background: rgba(255, 107, 107, 0.28);
+      border-color: rgba(255, 107, 107, 0.5);
+      background:
+        linear-gradient(180deg, rgba(255, 107, 107, 0.26), rgba(255, 255, 255, 0.03)),
+        rgba(255, 107, 107, 0.12);
+    }
+
+    .policy-form button {
+      align-self: center;
+      width: 100%;
+      margin-top: 2px;
     }
 
     .turn-user {
       margin: 0 0 10px;
       color: var(--muted);
+      font-size: 1.03rem;
     }
 
     .turn-user strong {
       color: var(--text);
+    }
+
+    .turn-timer {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.97rem;
+    }
+
+    .turn-timer strong {
+      color: var(--text);
+      letter-spacing: 0.03em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .turn-timer.is-paused strong {
+      color: #ffd39a;
     }
 
     .queue-list {
@@ -300,38 +476,114 @@
       padding-right: 8px;
     }
 
+    .queue-current-card {
+      grid-area: queueCurrent;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .queue-current-card .queue-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+    }
+
     .meta {
-      margin-top: 10px;
+      margin: 2px 0 0;
       color: var(--muted);
       font-size: 0.87rem;
       text-align: right;
     }
 
-    @media (max-width: 860px) {
+    .meta:empty {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
       .grid {
         grid-template-columns: 1fr;
+        grid-template-areas:
+          "oled"
+          "queueMode"
+          "rotation"
+          "policies"
+          "queueCurrent";
+      }
+
+      .admin-rotation-card,
+      .queue-current-card {
+        height: auto;
       }
 
       .field-grid {
         grid-template-columns: 1fr;
       }
 
-      .brand-title {
-        font-size: clamp(36px, 11vw, 54px);
+      .welcome-title {
+        font-size: clamp(46px, 11vw, 70px);
       }
 
-      .subtitle {
-        font-size: 0.93rem;
+      .admin-panel {
+        padding: 16px;
+      }
+
+      .admin-policies-card {
+        padding: 14px;
       }
     }
 
-    @keyframes hueflow {
+    @media (max-width: 640px) {
+      .app {
+        padding: 10px 10px 16px;
+      }
+
+      .topbar,
+      .welcome-header {
+        margin-bottom: 8px;
+      }
+
+      .card.admin-panel {
+        border-radius: 22px;
+        padding: 14px;
+        gap: 12px;
+      }
+
+      .section-card {
+        border-radius: 16px;
+        padding: 12px;
+      }
+
+      .subtitle {
+        font-size: 0.92rem;
+      }
+
+      .admin-description {
+        text-align: left;
+      }
+
+      .notice {
+        border-radius: 12px;
+        font-size: 0.92rem;
+      }
+
+      .mode-options {
+        gap: 10px;
+      }
+
+      .mode-option-btn,
+      button {
+        min-height: 42px;
+      }
+    }
+
+    @keyframes rainbowBorder {
       0% {
-        filter: hue-rotate(0deg) blur(1.2px);
+        filter: hue-rotate(0deg) blur(1.5px);
       }
 
       100% {
-        filter: hue-rotate(360deg) blur(1.2px);
+        filter: hue-rotate(360deg) blur(1.5px);
       }
     }
   </style>
@@ -339,65 +591,77 @@
 <body>
   <div class="bg-orb bg-orb-1"></div>
   <div class="bg-orb bg-orb-2"></div>
-  <main class="shell">
-    <header class="top">
-      <h1 class="brand-title" data-text="BenaLed Admin"><span>BenaLed Admin</span></h1>
-      <p class="subtitle">
+  <div class="app">
+    <header class="topbar welcome-header">
+      <h1 class="welcome-title" data-text="BenaLed Admin"><span>BenaLed Admin</span></h1>
+    </header>
+
+    <main class="card admin-panel">
+      <p class="subtitle admin-description">
         Controle direto de fila e politicas do sistema. Esta area existe apenas na rota <code>/admin</code>.
       </p>
       <div id="notice" class="notice">Carregando estado atual...</div>
-    </header>
 
-    <section class="grid">
-      <article class="card">
-        <h2>Modo Fila</h2>
-        <div class="row">
-          <button id="queueModeBtn" type="button">Ativar modo fila</button>
-          <button id="clearQueueBtn" type="button" class="danger">Limpar fila</button>
-        </div>
-      </article>
-
-      <article class="card">
-        <h2>Rotacao</h2>
-        <div class="row">
-          <button id="rotationBtn" type="button">Pausar rotacao</button>
-        </div>
-      </article>
-
-      <article class="card">
-        <h2>Politicas</h2>
-        <form id="policyForm">
-          <div class="field-grid">
-            <label for="defaultTurnSec">
-              Tempo padrao do turno (s)
-              <input id="defaultTurnSec" name="default_turn_sec" type="number" min="1" required />
-            </label>
-            <label for="minTurnSec">
-              Tempo minimo (s)
-              <input id="minTurnSec" name="min_turn_sec" type="number" min="1" required />
-            </label>
-            <label for="maxTurnSec">
-              Tempo maximo (s)
-              <input id="maxTurnSec" name="max_turn_sec" type="number" min="1" required />
-            </label>
-            <label for="maxUsers">
-              Maximo de usuarios
-              <input id="maxUsers" name="max_users" type="number" min="1" required />
-            </label>
+      <section class="grid">
+        <article class="section-card admin-oled-card">
+          <h2>Modo da tela OLED</h2>
+          <div class="mode-options">
+            <button id="expositionModeBtn" class="mode-option-btn" type="button" aria-pressed="false">Exposição</button>
+            <button id="technicalModeBtn" class="mode-option-btn" type="button" aria-pressed="false">Técnico</button>
           </div>
-          <button id="applyPoliciesBtn" type="submit">Aplicar politicas</button>
-        </form>
-      </article>
+        </article>
 
-      <article class="card">
-        <h2>Fila Atual</h2>
-        <p class="turn-user">Usuario do turno atual: <strong id="currentUser">-</strong></p>
-        <ul id="queueList" class="queue-list"></ul>
-      </article>
-    </section>
+        <article class="section-card admin-queue-mode-card">
+          <h2>Modo Fila</h2>
+          <div class="row">
+            <button id="queueModeBtn" type="button">Ativar modo fila</button>
+            <button id="clearQueueBtn" type="button" class="danger">Limpar fila</button>
+          </div>
+        </article>
 
-    <p id="lastSync" class="meta"></p>
-  </main>
+        <article class="section-card admin-rotation-card">
+          <h2>Troca de turno</h2>
+          <div class="row">
+            <button id="rotationBtn" type="button">Pausar troca</button>
+          </div>
+          <p id="turnTimerLabel" class="turn-timer">Tempo restante: <strong id="turnTimerValue">00:00</strong></p>
+        </article>
+
+        <article class="section-card admin-policies-card">
+          <h2>Politicas</h2>
+          <form id="policyForm" class="policy-form">
+            <div class="field-grid">
+              <label for="defaultTurnSec">
+                Tempo padrao do turno (s)
+                <input id="defaultTurnSec" name="default_turn_sec" type="number" min="1" required />
+              </label>
+              <label for="minTurnSec">
+                Tempo minimo (s)
+                <input id="minTurnSec" name="min_turn_sec" type="number" min="1" required />
+              </label>
+              <label for="maxTurnSec">
+                Tempo maximo (s)
+                <input id="maxTurnSec" name="max_turn_sec" type="number" min="1" required />
+              </label>
+              <label for="maxUsers">
+                Maximo de usuarios
+                <input id="maxUsers" name="max_users" type="number" min="1" required />
+              </label>
+            </div>
+            <button id="applyPoliciesBtn" type="submit">Aplicar politicas</button>
+          </form>
+        </article>
+
+        <article class="section-card queue-current-card">
+          <h2>Fila Atual</h2>
+          <p class="turn-user">Usuario do turno atual: <strong id="currentUser">-</strong></p>
+          <ul id="queueList" class="queue-list"></ul>
+        </article>
+      </section>
+
+      <p id="lastSync" class="meta"></p>
+    </main>
+  </div>
 
   <script>
     (function () {
@@ -405,10 +669,13 @@
       const pollIntervalMs = 5000;
 
       const noticeEl = document.getElementById("notice");
+      const expositionModeBtn = document.getElementById("expositionModeBtn");
+      const technicalModeBtn = document.getElementById("technicalModeBtn");
       const queueModeBtn = document.getElementById("queueModeBtn");
       const clearQueueBtn = document.getElementById("clearQueueBtn");
       const rotationBtn = document.getElementById("rotationBtn");
       const policyForm = document.getElementById("policyForm");
+      const applyPoliciesBtn = document.getElementById("applyPoliciesBtn");
       const defaultTurnInput = document.getElementById("defaultTurnSec");
       const minTurnInput = document.getElementById("minTurnSec");
       const maxTurnInput = document.getElementById("maxTurnSec");
@@ -416,15 +683,20 @@
       const currentUserEl = document.getElementById("currentUser");
       const queueListEl = document.getElementById("queueList");
       const lastSyncEl = document.getElementById("lastSync");
+      const turnTimerLabelEl = document.getElementById("turnTimerLabel");
+      const turnTimerValueEl = document.getElementById("turnTimerValue");
 
       let state = null;
       let syncTimer = null;
+      let countdownTickTimer = null;
       let pendingRequests = 0;
 
       function setBusy(isBusy) {
         pendingRequests += isBusy ? 1 : -1;
         if (pendingRequests < 0) pendingRequests = 0;
         const disabled = pendingRequests > 0;
+        expositionModeBtn.disabled = disabled;
+        technicalModeBtn.disabled = disabled;
         queueModeBtn.disabled = disabled;
         clearQueueBtn.disabled = disabled;
         rotationBtn.disabled = disabled;
@@ -432,7 +704,7 @@
         minTurnInput.disabled = disabled;
         maxTurnInput.disabled = disabled;
         maxUsersInput.disabled = disabled;
-        document.getElementById("applyPoliciesBtn").disabled = disabled;
+        applyPoliciesBtn.disabled = disabled;
       }
 
       function setNotice(message, type) {
@@ -459,21 +731,75 @@
         });
       }
 
+      function formatCountdown(totalSeconds) {
+        if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) {
+          return "00:00";
+        }
+
+        const clamped = Math.max(0, Math.floor(totalSeconds));
+        const minutes = Math.floor(clamped / 60);
+        const seconds = clamped % 60;
+        return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+      }
+
+      function renderTurnTimer() {
+        if (!turnTimerLabelEl || !turnTimerValueEl || !state) return;
+
+        const isPaused = state.queue_mode_enabled && state.rotation_paused;
+        const hasActiveTurn = state.queue_mode_enabled && !state.rotation_paused && state.has_active_turn;
+
+        turnTimerLabelEl.classList.toggle("is-paused", isPaused);
+        turnTimerValueEl.textContent = isPaused ? "Pausado" : formatCountdown(hasActiveTurn ? state.turn_remaining_sec : 0);
+      }
+
+      function normalizeOledMode(mode) {
+        return mode === "technical" ? "technical" : "exhibition";
+      }
+
+      function updateOledModeButtons(mode) {
+        const isTechnical = mode === "technical";
+        expositionModeBtn.classList.toggle("is-active", !isTechnical);
+        technicalModeBtn.classList.toggle("is-active", isTechnical);
+        expositionModeBtn.setAttribute("aria-pressed", String(!isTechnical));
+        technicalModeBtn.setAttribute("aria-pressed", String(isTechnical));
+      }
+
       function render(data) {
-        state = data;
+        const oledMode = normalizeOledMode(data.oled_mode);
+        state = Object.assign({}, data, { oled_mode: oledMode });
+        state.turn_remaining_sec = Math.max(0, Number(state.turn_remaining_sec || 0));
+        state.has_active_turn = Boolean(state.has_active_turn);
+        state.queue_count = Math.max(0, Number(state.queue_count || (Array.isArray(state.queue) ? state.queue.length : 0)));
+        state.queue_mode_enabled = Boolean(state.queue_mode_enabled);
+        state.rotation_paused = Boolean(state.rotation_paused);
 
-        queueModeBtn.textContent = data.queue_mode_enabled ? "Desativar modo fila" : "Ativar modo fila";
-        rotationBtn.textContent = data.rotation_paused ? "Retomar rotacao" : "Pausar rotacao";
+        queueModeBtn.textContent = state.queue_mode_enabled ? "Desativar modo fila" : "Ativar modo fila";
+        rotationBtn.textContent = state.rotation_paused ? "Retomar troca" : "Pausar troca";
+        updateOledModeButtons(state.oled_mode);
 
-        defaultTurnInput.value = String(data.default_turn_sec);
-        minTurnInput.value = String(data.min_turn_sec);
-        maxTurnInput.value = String(data.max_turn_sec);
-        maxUsersInput.value = String(data.max_users);
-        maxUsersInput.max = String(data.ap_max_connections || 1);
+        defaultTurnInput.value = String(state.default_turn_sec);
+        minTurnInput.value = String(state.min_turn_sec);
+        maxTurnInput.value = String(state.max_turn_sec);
+        maxUsersInput.value = String(state.max_users);
+        maxUsersInput.max = String(state.ap_max_connections || 1);
 
-        currentUserEl.textContent = data.current_user && data.current_user.length > 0 ? data.current_user : "Nenhum";
-        updateQueueList(data.queue);
+        currentUserEl.textContent = state.current_user && state.current_user.length > 0 ? state.current_user : "Nenhum";
+        updateQueueList(state.queue);
+        renderTurnTimer();
         lastSyncEl.textContent = "Ultima atualizacao: " + new Date().toLocaleTimeString();
+      }
+
+      function tickTurnCountdown() {
+        if (!state) return;
+
+        if (state.queue_mode_enabled &&
+            !state.rotation_paused &&
+            state.has_active_turn &&
+            state.turn_remaining_sec > 0) {
+          state.turn_remaining_sec -= 1;
+        }
+
+        renderTurnTimer();
       }
 
       async function postAction(action, payload) {
@@ -526,12 +852,32 @@
         }
       }
 
+      expositionModeBtn.addEventListener("click", async function () {
+        if (!state || state.oled_mode === "exhibition") return;
+        try {
+          await postAction("set_oled_mode", { mode: "exhibition" });
+          setNotice("Modo Exposição ativado na telinha OLED.", "ok");
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      });
+
+      technicalModeBtn.addEventListener("click", async function () {
+        if (!state || state.oled_mode === "technical") return;
+        try {
+          await postAction("set_oled_mode", { mode: "technical" });
+          setNotice("Modo Técnico ativado: tela de status imediata.", "ok");
+        } catch (err) {
+          setNotice(err.message, "error");
+        }
+      });
+
       queueModeBtn.addEventListener("click", async function () {
         if (!state) return;
         try {
           const enabled = !state.queue_mode_enabled;
           await postAction("set_queue_mode", { enabled: enabled ? 1 : 0 });
-          setNotice(enabled ? "Modo fila ativado." : "Modo fila desativado.", "ok");
+          setNotice(enabled ? "Modo fila ativado com troca automatica." : "Modo fila desativado.", "ok");
         } catch (err) {
           setNotice(err.message, "error");
         }
@@ -553,7 +899,7 @@
         try {
           const paused = !state.rotation_paused;
           await postAction("set_rotation", { paused: paused ? 1 : 0 });
-          setNotice(paused ? "Rotacao pausada." : "Rotacao retomada.", "ok");
+          setNotice(paused ? "Troca de turno pausada." : "Troca de turno retomada.", "ok");
         } catch (err) {
           setNotice(err.message, "error");
         }
@@ -562,7 +908,7 @@
       policyForm.addEventListener("submit", async function (event) {
         event.preventDefault();
 
-        const apMaxConnections = Number(state?.ap_max_connections || 1);
+        const apMaxConnections = Number((state && state.ap_max_connections) || 1);
         const requestedMaxUsers = Number(maxUsersInput.value);
         if (Number.isFinite(requestedMaxUsers) && requestedMaxUsers > apMaxConnections) {
           maxUsersInput.value = String(apMaxConnections);
@@ -589,10 +935,16 @@
       syncTimer = window.setInterval(function () {
         refresh(false);
       }, pollIntervalMs);
+      countdownTickTimer = window.setInterval(function () {
+        tickTurnCountdown();
+      }, 1000);
 
       window.addEventListener("beforeunload", function () {
         if (syncTimer !== null) {
           window.clearInterval(syncTimer);
+        }
+        if (countdownTickTimer !== null) {
+          window.clearInterval(countdownTickTimer);
         }
       });
     })();
