@@ -29,6 +29,22 @@ static const char *TAG = "matrix_task";
 #error "MATRIX_ORIGIN invalido em app_config.h"
 #endif
 
+#if (MATRIX_PANEL_WIDTH == 0) || (MATRIX_PANEL_HEIGHT == 0)
+#error "MATRIX_PANEL_WIDTH e MATRIX_PANEL_HEIGHT devem ser > 0"
+#endif
+
+#if (MATRIX_WIDTH % MATRIX_PANEL_WIDTH) != 0
+#error "MATRIX_WIDTH deve ser multiplo de MATRIX_PANEL_WIDTH"
+#endif
+
+#if (MATRIX_HEIGHT % MATRIX_PANEL_HEIGHT) != 0
+#error "MATRIX_HEIGHT deve ser multiplo de MATRIX_PANEL_HEIGHT"
+#endif
+
+#if (MATRIX_PANEL_CHAIN_LAYOUT != MATRIX_PANEL_CHAIN_ROW_MAJOR) && (MATRIX_PANEL_CHAIN_LAYOUT != MATRIX_PANEL_CHAIN_SERPENTINE)
+#error "MATRIX_PANEL_CHAIN_LAYOUT invalido em app_config.h"
+#endif
+
 static QueueHandle_t s_matrix_queue = NULL;
 static uint8_t s_drop_frame_storage[MATRIX_RGB_FRAME_SIZE];
 static uint8_t s_front_buffer_storage[MATRIX_RGB_FRAME_SIZE];
@@ -72,6 +88,11 @@ static const char *matrix_layout_to_str(void)
     return (MATRIX_LAYOUT == MATRIX_LAYOUT_SERPENTINE) ? "SERPENTINE" : "PROGRESSIVE";
 }
 
+static const char *matrix_panel_chain_layout_to_str(void)
+{
+    return (MATRIX_PANEL_CHAIN_LAYOUT == MATRIX_PANEL_CHAIN_SERPENTINE) ? "SERPENTINE" : "ROW_MAJOR";
+}
+
 static const char *matrix_origin_to_str(void)
 {
     switch (MATRIX_ORIGIN)
@@ -89,7 +110,7 @@ static const char *matrix_origin_to_str(void)
     }
 }
 
-static void matrix_apply_origin(size_t logical_x, size_t logical_y, size_t *mapped_x, size_t *mapped_y)
+static void matrix_apply_origin(size_t logical_x, size_t logical_y, size_t width, size_t height, size_t *mapped_x, size_t *mapped_y)
 {
     size_t x = logical_x;
     size_t y = logical_y;
@@ -99,14 +120,14 @@ static void matrix_apply_origin(size_t logical_x, size_t logical_y, size_t *mapp
     case MATRIX_ORIGIN_TOP_LEFT:
         break;
     case MATRIX_ORIGIN_TOP_RIGHT:
-        x = (size_t)(MATRIX_WIDTH - 1U) - x;
+        x = (width - 1U) - x;
         break;
     case MATRIX_ORIGIN_BOTTOM_LEFT:
-        y = (size_t)(MATRIX_HEIGHT - 1U) - y;
+        y = (height - 1U) - y;
         break;
     case MATRIX_ORIGIN_BOTTOM_RIGHT:
-        x = (size_t)(MATRIX_WIDTH - 1U) - x;
-        y = (size_t)(MATRIX_HEIGHT - 1U) - y;
+        x = (width - 1U) - x;
+        y = (height - 1U) - y;
         break;
     default:
         break;
@@ -116,11 +137,41 @@ static void matrix_apply_origin(size_t logical_x, size_t logical_y, size_t *mapp
     *mapped_y = y;
 }
 
-static size_t matrix_logical_xy_to_physical_pixel_index(size_t logical_x, size_t logical_y)
+static size_t matrix_panel_cols(void)
 {
-    size_t x = logical_x;
-    size_t y = logical_y;
-    matrix_apply_origin(logical_x, logical_y, &x, &y);
+    return (size_t)MATRIX_WIDTH / (size_t)MATRIX_PANEL_WIDTH;
+}
+
+static size_t matrix_panel_rows(void)
+{
+    return (size_t)MATRIX_HEIGHT / (size_t)MATRIX_PANEL_HEIGHT;
+}
+
+static size_t matrix_panel_xy_to_chain_index(size_t panel_x, size_t panel_y)
+{
+    const size_t panel_cols = matrix_panel_cols();
+    size_t x = panel_x;
+
+    if (MATRIX_PANEL_CHAIN_LAYOUT == MATRIX_PANEL_CHAIN_SERPENTINE)
+    {
+        bool reverse_row = ((panel_y & 1U) != 0U);
+#if MATRIX_PANEL_CHAIN_ODD_ROWS_REVERSED == 0
+        reverse_row = !reverse_row;
+#endif
+        if (reverse_row)
+        {
+            x = (panel_cols - 1U) - x;
+        }
+    }
+
+    return (panel_y * panel_cols) + x;
+}
+
+static size_t matrix_local_xy_to_panel_pixel_index(size_t local_x, size_t local_y)
+{
+    size_t x = local_x;
+    size_t y = local_y;
+    matrix_apply_origin(local_x, local_y, (size_t)MATRIX_PANEL_WIDTH, (size_t)MATRIX_PANEL_HEIGHT, &x, &y);
 
     if (MATRIX_LAYOUT == MATRIX_LAYOUT_SERPENTINE)
     {
@@ -130,11 +181,24 @@ static size_t matrix_logical_xy_to_physical_pixel_index(size_t logical_x, size_t
 #endif
         if (reverse_row)
         {
-            x = (size_t)(MATRIX_WIDTH - 1U) - x;
+            x = ((size_t)MATRIX_PANEL_WIDTH - 1U) - x;
         }
     }
 
-    return (y * (size_t)MATRIX_WIDTH) + x;
+    return (y * (size_t)MATRIX_PANEL_WIDTH) + x;
+}
+
+static size_t matrix_logical_xy_to_physical_pixel_index(size_t logical_x, size_t logical_y)
+{
+    const size_t panel_pixels = (size_t)MATRIX_PANEL_WIDTH * (size_t)MATRIX_PANEL_HEIGHT;
+    const size_t panel_x = logical_x / (size_t)MATRIX_PANEL_WIDTH;
+    const size_t panel_y = logical_y / (size_t)MATRIX_PANEL_HEIGHT;
+    const size_t local_x = logical_x % (size_t)MATRIX_PANEL_WIDTH;
+    const size_t local_y = logical_y % (size_t)MATRIX_PANEL_HEIGHT;
+
+    const size_t panel_index = matrix_panel_xy_to_chain_index(panel_x, panel_y);
+    const size_t pixel_in_panel = matrix_local_xy_to_panel_pixel_index(local_x, local_y);
+    return (panel_index * panel_pixels) + pixel_in_panel;
 }
 
 static void matrix_reorder_pixel_rgb(const uint8_t *rgb, uint8_t *ordered)
@@ -290,13 +354,18 @@ static esp_err_t rmt_matrix_init(void)
 
     s_rmt_initialized = true;
     ESP_LOGI(TAG,
-             "RMT ready gpio=%d dma=%s color_order=%s layout=%s origin=%s odd_rows_reversed=%d",
+             "RMT ready gpio=%d dma=%s color_order=%s panel_layout=%s panel_origin=%s panel_odd_rows_reversed=%d panel_chain=%s panel=%dx%d grid=%ux%u",
              MATRIX_DATA_GPIO,
              s_rmt_with_dma ? "on" : "off",
              matrix_color_order_to_str(),
              matrix_layout_to_str(),
              matrix_origin_to_str(),
-             (int)MATRIX_SERPENTINE_ODD_ROWS_REVERSED);
+             (int)MATRIX_SERPENTINE_ODD_ROWS_REVERSED,
+             matrix_panel_chain_layout_to_str(),
+             MATRIX_PANEL_WIDTH,
+             MATRIX_PANEL_HEIGHT,
+             (unsigned)matrix_panel_cols(),
+             (unsigned)matrix_panel_rows());
     return ESP_OK;
 }
 
