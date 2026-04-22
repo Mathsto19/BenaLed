@@ -24,6 +24,32 @@
 #define MATRIX_CHANNELS 3
 #define MATRIX_RGB_FRAME_SIZE (MATRIX_WIDTH * MATRIX_HEIGHT * MATRIX_CHANNELS)
 #define MATRIX_QUEUE_LEN 2
+#define MATRIX_DATA_GPIO 2
+
+// Physical LED order on the strip/panel
+#define MATRIX_COLOR_ORDER_RGB 0
+#define MATRIX_COLOR_ORDER_GRB 1
+#define MATRIX_COLOR_ORDER_BRG 2
+#define MATRIX_COLOR_ORDER_RBG 3
+#define MATRIX_COLOR_ORDER_GBR 4
+#define MATRIX_COLOR_ORDER_BGR 5
+#define MATRIX_COLOR_ORDER MATRIX_COLOR_ORDER_GRB
+
+// How pixels are wired physically on the panel
+#define MATRIX_LAYOUT_PROGRESSIVE 0
+#define MATRIX_LAYOUT_SERPENTINE 1
+#define MATRIX_LAYOUT MATRIX_LAYOUT_SERPENTINE
+
+// On serpentine layout, odd rows are typically reversed (left<->right)
+#define MATRIX_SERPENTINE_ODD_ROWS_REVERSED 1
+
+// Which corner is physical pixel 0
+#define MATRIX_ORIGIN_TOP_LEFT 0
+#define MATRIX_ORIGIN_TOP_RIGHT 1
+#define MATRIX_ORIGIN_BOTTOM_LEFT 2
+#define MATRIX_ORIGIN_BOTTOM_RIGHT 3
+#define MATRIX_ORIGIN MATRIX_ORIGIN_TOP_LEFT
+
 #define PORTAL_URL "http://BenaLed.com"
 
 // OLED (Heltec HTUT-WB32LA(F))
